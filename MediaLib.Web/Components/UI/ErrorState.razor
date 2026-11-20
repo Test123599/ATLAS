@@ -1,0 +1,15 @@
+<div class="state-panel state-error" role="alert">
+    <span class="state-glyph">!</span>
+    <h3>@Titre</h3>
+    <p>@Message</p>
+    @if (OnRetry.HasDelegate)
+    {
+        <button class="btn btn-outline" type="button" @onclick="() => OnRetry.InvokeAsync()">Réessayer</button>
+    }
+</div>
+
+@code {
+    [Parameter] public string Titre { get; set; } = "Une erreur est survenue";
+    [Parameter] public string Message { get; set; } = "Le service est momentanément indisponible.";
+    [Parameter] public EventCallback OnRetry { get; set; }
+}

@@ -1,0 +1,115 @@
+@inject ILoansApi Loans
+@inject ToastService Toasts
+
+<div class="toolbar">
+    <div class="field">
+        <label for="loan-search">Recherche</label>
+        <input id="loan-search" type="search" value="@query.Recherche" @oninput="OnSearchChanged"
+               placeholder="Livre, auteur ou utilisateur" />
+    </div>
+    @if (!EnRetardUniquement)
+    {
+        <div class="field field-small">
+            <label for="loan-state">État</label>
+            <select id="loan-state" value="@etat" @onchange="OnStateChanged">
+                <option value="tous">Tous les prêts</option>
+                <option value="actifs">Actifs</option>
+                <option value="rendus">Rendus</option>
+            </select>
+        </div>
+    }
+    @if (EnRetardUniquement)
+    {
+        <div style="padding-bottom:10px"><StatusBadge Text="Retards uniquement" Tone="danger" /></div>
+    }
+</div>
+
+@if (chargement)
+{
+    <LoadingState Message="Consultation des prêts…" />
+}
+else if (erreur is not null)
+{
+    <ErrorState Message="@erreur" OnRetry="Charger" />
+}
+else if (resultat is null || resultat.Items.Count == 0)
+{
+    <EmptyState Titre="Aucun prêt trouvé"
+                Message="@(EnRetardUniquement ? "Aucun prêt n'est actuellement en retard." : "Aucun prêt ne correspond à ces critères.")" />
+}
+else
+{
+    <p class="small muted">@resultat.TotalCount résultat(s) · page @resultat.Page sur @resultat.TotalPages</p>
+    <div class="panel" style="padding-top:6px">
+        <div class="activity-list">
+            @foreach (var emprunt in resultat.Items)
+            {
+                <LoanItem Emprunt="emprunt" AfficherUtilisateur="true" />
+            }
+        </div>
+    </div>
+    <Pagination Page="resultat.Page" TotalPages="resultat.TotalPages" OnPageChanged="ChangerPage" />
+}
+
+@code {
+    /// <summary>When true, only active overdue loans are shown.</summary>
+    [Parameter] public bool EnRetardUniquement { get; set; }
+
+    private readonly EmpruntQueryDto query = new() { Page = 1, TaillePage = 15 };
+    private string etat = "tous";
+    private PagedResult<EmpruntDto>? resultat;
+    private bool chargement = true;
+    private string? erreur;
+
+    protected override async Task OnInitializedAsync()
+    {
+        query.EnRetard = EnRetardUniquement ? true : null;
+        await Charger();
+    }
+
+    private async Task Charger()
+    {
+        chargement = true;
+        erreur = null;
+        try
+        {
+            resultat = await Loans.GetAllAsync(query);
+        }
+        catch (ApiRequestException ex)
+        {
+            erreur = ex.Message;
+            Toasts.Error(ex.Message);
+        }
+        catch (HttpRequestException)
+        {
+            erreur = "Le service des emprunts est momentanément indisponible.";
+        }
+        finally
+        {
+            chargement = false;
+        }
+    }
+
+    private async Task OnSearchChanged(ChangeEventArgs args)
+    {
+        query.Recherche = args.Value?.ToString() ?? string.Empty;
+        query.Page = 1;
+        await Charger();
+    }
+
+    private async Task OnStateChanged(ChangeEventArgs args)
+    {
+        if (EnRetardUniquement) return;
+
+        etat = args.Value?.ToString() ?? "tous";
+        query.Actif = etat switch { "actifs" => true, "rendus" => false, _ => null };
+        query.Page = 1;
+        await Charger();
+    }
+
+    private async Task ChangerPage(int page)
+    {
+        query.Page = page;
+        await Charger();
+    }
+}

@@ -1,0 +1,189 @@
+@page "/bibliothecaire/livres/{Id:int}/modifier"
+@attribute [Authorize(Policy = Policies.PeutGererCatalogue)]
+@inject IBooksApi Books
+@inject IAuthorsApi Authors
+@inject ICategoriesApi Categories
+@inject ToastService Toasts
+@inject NavigationManager Navigation
+
+<PageTitle>Modifier un livre · ATLAS</PageTitle>
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Espace bibliothèque</p>
+        <h1>Modifier l'ouvrage</h1>
+        <p>Le stock total ne peut pas être inférieur au nombre d'exemplaires actuellement empruntés.</p>
+    </div>
+    <a class="btn btn-outline" href="/bibliothecaire/livres">← Retour au catalogue</a>
+</div>
+
+@if (chargement)
+{
+    <LoadingState Message="Chargement de la notice…" />
+}
+else if (introuvable)
+{
+    <EmptyState Titre="Ouvrage introuvable" Message="Ce livre n'existe plus dans le catalogue.">
+        <a class="btn btn-outline" href="/bibliothecaire/livres">Retour à la gestion</a>
+    </EmptyState>
+}
+else
+{
+    <div class="panel" style="max-width:860px">
+        @if (livre is not null)
+        {
+            <div class="row" style="margin-bottom:22px;padding-bottom:18px;border-bottom:1px solid var(--line)">
+                <span style="width:56px;flex:none"><CoverArt Titre="@livre.Titre" Auteur="@livre.AuteurNom" Isbn="@livre.Isbn" Url="@livre.CouvertureUrl" /></span>
+                <div>
+                    <strong>@livre.Titre</strong><br />
+                    <span class="small muted">@livre.AuteurNom · @livre.NombreEmpruntsActifs emprunt(s) en cours · @livre.NombreDisponibles disponible(s)</span>
+                </div>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(erreur))
+        {
+            <div class="validation-summary" role="alert">@erreur</div>
+        }
+
+        <EditForm Model="modele" OnValidSubmit="Enregistrer" class="form-grid">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+
+            <div class="form-row">
+                <div class="field">
+                    <label for="edit-title">Titre</label>
+                    <InputText id="edit-title" @bind-Value="modele.Titre" />
+                    <ValidationMessage For="() => modele.Titre" />
+                </div>
+                <div class="field">
+                    <label for="edit-isbn">ISBN</label>
+                    <InputText id="edit-isbn" @bind-Value="modele.Isbn" />
+                    <ValidationMessage For="() => modele.Isbn" />
+                </div>
+            </div>
+
+            <div class="field">
+                <label for="edit-summary">Résumé</label>
+                <InputTextArea id="edit-summary" @bind-Value="modele.Resume" />
+                <ValidationMessage For="() => modele.Resume" />
+            </div>
+
+            <div class="form-row">
+                <div class="field">
+                    <label for="edit-year">Année de publication</label>
+                    <InputNumber id="edit-year" @bind-Value="modele.AnneePublication" />
+                    <ValidationMessage For="() => modele.AnneePublication" />
+                </div>
+                <div class="field">
+                    <label for="edit-stock">Nombre total d'exemplaires</label>
+                    <InputNumber id="edit-stock" @bind-Value="modele.NombreExemplaires" />
+                    <ValidationMessage For="() => modele.NombreExemplaires" />
+                    <span class="small muted">Minimum : @(livre?.NombreExemplaires - livre?.NombreDisponibles ?? 0) exemplaire(s) déjà prêté(s).</span>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="field">
+                    <label for="edit-author">Auteur</label>
+                    <InputSelect id="edit-author" @bind-Value="modele.AuteurId">
+                        @foreach (var auteur in auteurs)
+                        {
+                            <option value="@auteur.Id">@auteur.NomComplet</option>
+                        }
+                    </InputSelect>
+                    <ValidationMessage For="() => modele.AuteurId" />
+                </div>
+                <div class="field">
+                    <label for="edit-category">Collection</label>
+                    <InputSelect id="edit-category" @bind-Value="modele.CategorieId">
+                        @foreach (var categorie in categories)
+                        {
+                            <option value="@categorie.Id">@categorie.Libelle</option>
+                        }
+                    </InputSelect>
+                    <ValidationMessage For="() => modele.CategorieId" />
+                </div>
+            </div>
+
+            <div class="field">
+                <label for="edit-cover">URL de couverture</label>
+                <InputText id="edit-cover" @bind-Value="modele.CouvertureUrl" />
+                <ValidationMessage For="() => modele.CouvertureUrl" />
+            </div>
+
+            <div class="form-actions">
+                <button class="btn btn-solid" type="submit" disabled="@occupation">@(occupation ? "Enregistrement…" : "Enregistrer les modifications")</button>
+                <a class="btn btn-quiet" href="/bibliothecaire/livres">Annuler</a>
+            </div>
+        </EditForm>
+    </div>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private readonly UpdateLivreRequest modele = new();
+    private LivreDetailDto? livre;
+    private IReadOnlyList<AuteurDto> auteurs = [];
+    private IReadOnlyList<CategorieDto> categories = [];
+    private bool chargement = true;
+    private bool occupation;
+    private bool introuvable;
+    private string? erreur;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            livre = await Books.GetByIdAsync(Id);
+            auteurs = await Authors.GetAllAsync();
+            categories = await Categories.GetAllAsync();
+            modele.Titre = livre.Titre;
+            modele.Isbn = livre.Isbn;
+            modele.Resume = livre.Resume;
+            modele.AnneePublication = livre.AnneePublication;
+            modele.NombreExemplaires = livre.NombreExemplaires;
+            modele.CouvertureUrl = livre.CouvertureUrl;
+            modele.AuteurId = livre.AuteurId;
+            modele.CategorieId = livre.CategorieId;
+        }
+        catch (ApiRequestException ex) when (ex.EstNotFound)
+        {
+            introuvable = true;
+        }
+        catch (ApiRequestException ex)
+        {
+            erreur = ex.Message;
+        }
+        catch (HttpRequestException)
+        {
+            erreur = "Le service est momentanément indisponible.";
+        }
+        finally
+        {
+            chargement = false;
+        }
+    }
+
+    private async Task Enregistrer()
+    {
+        occupation = true;
+        erreur = null;
+        try
+        {
+            await Books.UpdateAsync(Id, modele);
+            Toasts.Success("La notice a été mise à jour.");
+            Navigation.NavigateTo("/bibliothecaire/livres");
+        }
+        catch (ApiRequestException ex)
+        {
+            erreur = ex.Message;
+            Toasts.Error(ex.Message);
+        }
+        finally
+        {
+            occupation = false;
+        }
+    }
+}

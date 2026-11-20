@@ -1,0 +1,91 @@
+@page "/inscription"
+@inject IAuthApi Auth
+@inject AtlasAuthenticationStateProvider AuthProvider
+@inject ToastService Toasts
+@inject NavigationManager Navigation
+
+<div class="auth-layout">
+    <aside class="auth-aside">
+        <div>
+            <p class="eyebrow">Adhésion</p>
+            <h1>Rejoignez<br />la collection.</h1>
+            <p style="margin-top:20px">Un compte membre suffit pour emprunter jusqu'à cinq ouvrages et suivre vos lectures.</p>
+        </div>
+        <div class="demo-credentials">
+            La politique de mot de passe exige 8 caractères minimum, une majuscule et un chiffre.
+        </div>
+    </aside>
+
+    <div class="auth-form">
+        <p class="eyebrow">Nouveau compte</p>
+        <h2>Créer un compte</h2>
+        <p>L'inscription attribue automatiquement le rôle Membre.</p>
+
+        @if (!string.IsNullOrEmpty(erreur))
+        {
+            <div class="validation-summary" role="alert">@erreur</div>
+        }
+
+        <EditForm Model="modele" OnValidSubmit="Inscrire" class="form-grid">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <div class="form-row">
+                <div class="field">
+                    <label for="reg-prenom">Prénom</label>
+                    <InputText id="reg-prenom" @bind-Value="modele.Prenom" />
+                    <ValidationMessage For="() => modele.Prenom" />
+                </div>
+                <div class="field">
+                    <label for="reg-nom">Nom</label>
+                    <InputText id="reg-nom" @bind-Value="modele.Nom" />
+                    <ValidationMessage For="() => modele.Nom" />
+                </div>
+            </div>
+            <div class="field">
+                <label for="reg-email">Adresse e-mail</label>
+                <InputText id="reg-email" @bind-Value="modele.Email" type="email" autocomplete="username" />
+                <ValidationMessage For="() => modele.Email" />
+            </div>
+            <div class="field">
+                <label for="reg-password">Mot de passe</label>
+                <InputText id="reg-password" @bind-Value="modele.Password" type="password" autocomplete="new-password" />
+                <ValidationMessage For="() => modele.Password" />
+            </div>
+            <div class="form-actions">
+                <button class="btn btn-solid" type="submit" disabled="@occupation">@(occupation ? "Création…" : "Créer mon compte")</button>
+                <a class="btn btn-quiet" href="/connexion">J'ai déjà un compte</a>
+            </div>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    private readonly RegisterRequest modele = new();
+    private bool occupation;
+    private string? erreur;
+
+    private async Task Inscrire()
+    {
+        occupation = true;
+        erreur = null;
+        try
+        {
+            await Auth.RegisterAsync(modele);
+            await AuthProvider.SignInAsync(new LoginRequest { Email = modele.Email, Password = modele.Password });
+            Toasts.Success("Votre compte membre est prêt. Bonne lecture !");
+            Navigation.NavigateTo("/membre");
+        }
+        catch (ApiRequestException ex)
+        {
+            erreur = ex.Message;
+        }
+        catch (HttpRequestException)
+        {
+            erreur = "Le service d'inscription est momentanément indisponible.";
+        }
+        finally
+        {
+            occupation = false;
+        }
+    }
+}

@@ -1,0 +1,162 @@
+@page "/admin/utilisateurs"
+@attribute [Authorize(Policy = Policies.EstAdmin)]
+@inject IAdminApi Admin
+@inject ToastService Toasts
+
+<PageTitle>Utilisateurs · ATLAS</PageTitle>
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Administration</p>
+        <h1>Gestion des utilisateurs</h1>
+        <p>Recherchez les comptes, consultez les rôles et gérez l'accès à la bibliothèque.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-outline" href="/admin/roles">Gérer les rôles</a>
+        <a class="btn btn-outline" href="/admin/activation">Activation des comptes</a>
+    </div>
+</div>
+
+<div class="toolbar">
+    <div class="field">
+        <label for="user-search">Recherche</label>
+        <input id="user-search" type="search" value="@query.Recherche" @oninput="OnSearchChanged" placeholder="Nom, prénom ou e-mail" />
+    </div>
+    <div class="field field-small">
+        <label for="user-role">Rôle</label>
+        <select id="user-role" value="@roleValue" @onchange="OnRoleChanged">
+            <option value="">Tous les rôles</option>
+            @foreach (var role in Roles.All)
+            {
+                <option value="@role">@role</option>
+            }
+        </select>
+    </div>
+</div>
+
+@if (chargement)
+{
+    <LoadingState Message="Chargement des comptes…" />
+}
+else if (erreur is not null)
+{
+    <ErrorState Message="@erreur" OnRetry="Charger" />
+}
+else if (resultat is null || resultat.Items.Count == 0)
+{
+    <EmptyState Titre="Aucun utilisateur" Message="Aucun compte ne correspond à ces critères." />
+}
+else
+{
+    <p class="small muted">@resultat.TotalCount compte(s) · page @resultat.Page sur @resultat.TotalPages</p>
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Utilisateur</th>
+                    <th>Rôles</th>
+                    <th>Inscription</th>
+                    <th>Prêts actifs</th>
+                    <th>État</th>
+                    <th style="text-align:right">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var utilisateur in resultat.Items)
+                {
+                    <tr>
+                        <td>
+                            <a href="/admin/utilisateurs/@Uri.EscapeDataString(utilisateur.Id)"><strong>@utilisateur.Prenom @utilisateur.Nom</strong></a><br />
+                            <small class="muted">@utilisateur.Email</small>
+                        </td>
+                        <td>
+                            <div class="row" style="gap:4px">
+                                @foreach (var role in utilisateur.Roles)
+                                {
+                                    <StatusBadge Text="@role" Tone="@(role == Roles.Admin ? "terracotta" : role == Roles.Bibliothecaire ? "sage" : "muted")" />
+                                }
+                            </div>
+                        </td>
+                        <td>@utilisateur.DateInscription.ToString("dd MMM yyyy")</td>
+                        <td>@utilisateur.NombreEmpruntsActifs</td>
+                        <td>
+                            @if (utilisateur.EstVerrouille)
+                            {
+                                <StatusBadge Text="Verrouillé" Tone="danger" />
+                            }
+                            else if (utilisateur.EstActif)
+                            {
+                                <StatusBadge Text="Actif" Tone="sage" />
+                            }
+                            else
+                            {
+                                <StatusBadge Text="Inactif" Tone="muted" />
+                            }
+                        </td>
+                        <td>
+                            <div class="cell-actions">
+                                <a class="btn btn-small btn-outline" href="/admin/utilisateurs/@Uri.EscapeDataString(utilisateur.Id)">Détails</a>
+                                <a class="btn btn-small btn-quiet" href="/admin/roles?utilisateur=@Uri.EscapeDataString(utilisateur.Id)">Rôles</a>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <Pagination Page="resultat.Page" TotalPages="resultat.TotalPages" OnPageChanged="ChangerPage" />
+}
+
+@code {
+    private readonly UtilisateurQueryDto query = new() { Page = 1, TaillePage = 15 };
+    private PagedResult<UtilisateurDto>? resultat;
+    private string roleValue = string.Empty;
+    private bool chargement = true;
+    private string? erreur;
+
+    protected override async Task OnInitializedAsync() => await Charger();
+
+    private async Task Charger()
+    {
+        chargement = true;
+        erreur = null;
+        try
+        {
+            resultat = await Admin.GetUsersAsync(query);
+        }
+        catch (ApiRequestException ex)
+        {
+            erreur = ex.Message;
+            Toasts.Error(ex.Message);
+        }
+        catch (HttpRequestException)
+        {
+            erreur = "Le service d'administration est momentanément indisponible.";
+        }
+        finally
+        {
+            chargement = false;
+        }
+    }
+
+    private async Task OnSearchChanged(ChangeEventArgs args)
+    {
+        query.Recherche = args.Value?.ToString() ?? string.Empty;
+        query.Page = 1;
+        await Charger();
+    }
+
+    private async Task OnRoleChanged(ChangeEventArgs args)
+    {
+        roleValue = args.Value?.ToString() ?? string.Empty;
+        query.Role = string.IsNullOrWhiteSpace(roleValue) ? null : roleValue;
+        query.Page = 1;
+        await Charger();
+    }
+
+    private async Task ChangerPage(int page)
+    {
+        query.Page = page;
+        await Charger();
+    }
+}

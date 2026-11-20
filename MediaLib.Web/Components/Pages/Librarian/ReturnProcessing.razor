@@ -1,0 +1,119 @@
+@page "/bibliothecaire/retours"
+@attribute [Authorize(Policy = Policies.PeutGererCatalogue)]
+@inject ILoansApi Loans
+@inject ToastService Toasts
+
+<PageTitle>Traitement des retours · ATLAS</PageTitle>
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Espace bibliothèque</p>
+        <h1>Traitement des retours</h1>
+        <p>Enregistrez le retour d'un ouvrage : le stock est restauré automatiquement et une seule fois.</p>
+    </div>
+    <a class="btn btn-outline" href="/bibliothecaire/emprunts">Voir tous les prêts</a>
+</div>
+
+<div class="toolbar">
+    <div class="field">
+        <label for="return-search">Rechercher un prêt actif</label>
+        <input id="return-search" type="search" value="@query.Recherche" @oninput="OnSearchChanged"
+               placeholder="Livre, auteur ou utilisateur" />
+    </div>
+    <div style="padding-bottom:10px"><StatusBadge Text="Prêts en cours" Tone="sage" /></div>
+</div>
+
+@if (chargement)
+{
+    <LoadingState Message="Chargement des prêts actifs…" />
+}
+else if (erreur is not null)
+{
+    <ErrorState Message="@erreur" OnRetry="Charger" />
+}
+else if (resultat is null || resultat.Items.Count == 0)
+{
+    <EmptyState Titre="Aucun prêt à retourner"
+                Message="Tous les ouvrages ont été rapportés ou aucun prêt ne correspond à la recherche." />
+}
+else
+{
+    <p class="small muted">@resultat.TotalCount prêt(s) actif(s) · page @resultat.Page sur @resultat.TotalPages</p>
+    <div class="panel" style="padding-top:6px">
+        <div class="activity-list">
+            @foreach (var emprunt in resultat.Items.OrderBy(e => e.DateRetourPrevue))
+            {
+                <LoanItem Emprunt="emprunt"
+                          AfficherUtilisateur="true"
+                          AfficherRetour="true"
+                          EnCours="@(empruntIdEnCours == emprunt.Id)"
+                          OnReturn="Retourner" />
+            }
+        </div>
+    </div>
+    <Pagination Page="resultat.Page" TotalPages="resultat.TotalPages" OnPageChanged="ChangerPage" />
+}
+
+@code {
+    private readonly EmpruntQueryDto query = new() { Actif = true, Page = 1, TaillePage = 15 };
+    private PagedResult<EmpruntDto>? resultat;
+    private int empruntIdEnCours;
+    private bool chargement = true;
+    private string? erreur;
+
+    protected override async Task OnInitializedAsync() => await Charger();
+
+    private async Task Charger()
+    {
+        chargement = true;
+        erreur = null;
+        try
+        {
+            resultat = await Loans.GetAllAsync(query);
+        }
+        catch (ApiRequestException ex)
+        {
+            erreur = ex.Message;
+        }
+        catch (HttpRequestException)
+        {
+            erreur = "Le service des emprunts est momentanément indisponible.";
+        }
+        finally
+        {
+            chargement = false;
+        }
+    }
+
+    private async Task OnSearchChanged(ChangeEventArgs args)
+    {
+        query.Recherche = args.Value?.ToString() ?? string.Empty;
+        query.Page = 1;
+        await Charger();
+    }
+
+    private async Task ChangerPage(int page)
+    {
+        query.Page = page;
+        await Charger();
+    }
+
+    private async Task Retourner(int id)
+    {
+        empruntIdEnCours = id;
+        try
+        {
+            var emprunt = await Loans.ReturnAsync(id);
+            Toasts.Success($"Le retour de « {emprunt.LivreTitre} » a été enregistré.");
+            await Charger();
+        }
+        catch (ApiRequestException ex)
+        {
+            Toasts.Error(ex.Message);
+        }
+        finally
+        {
+            empruntIdEnCours = 0;
+        }
+    }
+}

@@ -1,0 +1,222 @@
+@page "/catalogue"
+@inject IBooksApi Books
+@inject ICategoriesApi Categories
+@inject IAuthorsApi Authors
+@inject ILoansApi Loans
+@inject ToastService Toasts
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthState
+
+<h1>Le catalogue</h1>
+<p class="lead">Recherchez parmi la collection, filtrez par thème et consultez la disponibilité en temps réel.</p>
+
+<div class="toolbar">
+    <div class="field">
+        <label for="catalog-search">Recherche</label>
+        <input id="catalog-search" type="search" value="@filtres.Recherche"
+               @oninput="OnRechercheChanged" placeholder="Titre, auteur ou ISBN" />
+    </div>
+    <div class="field field-small">
+        <label for="catalog-category">Collection</label>
+        <select id="catalog-category" @bind="filtres.CategorieId" @bind:after="AppliquerFiltres">
+            <option value="">Toutes les collections</option>
+            @foreach (var categorie in categories)
+            {
+                <option value="@categorie.Id">@categorie.Libelle (@categorie.NombreLivres)</option>
+            }
+        </select>
+    </div>
+    <div class="field field-small">
+        <label for="catalog-author">Auteur</label>
+        <select id="catalog-author" @bind="filtres.AuteurId" @bind:after="AppliquerFiltres">
+            <option value="">Tous les auteurs</option>
+            @foreach (var auteur in auteurs)
+            {
+                <option value="@auteur.Id">@auteur.NomComplet</option>
+            }
+        </select>
+    </div>
+    <div class="field field-small">
+        <label for="catalog-sort">Trier par</label>
+        <select id="catalog-sort" @bind="filtres.Tri" @bind:after="AppliquerFiltres">
+            <option value="titre">Titre (A–Z)</option>
+            <option value="-ajout">Récemment ajoutés</option>
+            <option value="auteur">Auteur</option>
+            <option value="annee">Année de publication</option>
+            <option value="disponibilite">Disponibilité</option>
+        </select>
+    </div>
+    <label class="checkbox-line" style="padding-bottom:10px">
+        <input type="checkbox" @bind="filtres.DisponibleUniquement" @bind:after="AppliquerFiltres" />
+        Disponibles uniquement
+    </label>
+</div>
+
+<div class="spread" style="margin-bottom:18px">
+    <p class="small muted" style="margin:0">@(resultat is null ? "Chargement…" : $"{resultat.TotalCount} ouvrage(s) trouvé(s)")</p>
+    <button class="btn btn-quiet btn-small" type="button" @onclick="Reinitialiser">Réinitialiser les filtres</button>
+</div>
+
+@if (chargement)
+{
+    <LoadingState Message="Consultation du catalogue…" />
+}
+else if (erreur is not null)
+{
+    <ErrorState Message="@erreur" OnRetry="Charger" />
+}
+else if (resultat is null || resultat.Items.Count == 0)
+{
+    <EmptyState Titre="Aucun ouvrage trouvé" Message="Aucun livre ne correspond à ces critères. Essayez un autre titre, auteur ou collection.">
+        <button class="btn btn-outline" type="button" @onclick="Reinitialiser">Effacer les filtres</button>
+    </EmptyState>
+}
+else
+{
+    <div class="grid grid-books">
+        @foreach (var livre in resultat.Items)
+        {
+            <BookCard Livre="livre">
+                @if (estAuthentifie)
+                {
+                    <button class="btn btn-small @(livre.EstDisponible ? "btn-outline" : "btn-quiet")"
+                            type="button" disabled="@(!livre.EstDisponible || livreIdEnCours == livre.Id)"
+                            @onclick="() => Emprunter(livre)">
+                        @(livreIdEnCours == livre.Id ? "…" : livre.EstDisponible ? "Emprunter" : "Indisponible")
+                    </button>
+                }
+                else
+                {
+                    <a class="btn btn-small btn-quiet" href="/connexion?retour=/catalogue">Se connecter</a>
+                }
+            </BookCard>
+        }
+    </div>
+    <Pagination Page="resultat.Page" TotalPages="resultat.TotalPages" OnPageChanged="ChangerPage" />
+}
+
+@code {
+    [Parameter, SupplyParameterFromQuery(Name = "recherche")] public string? RechercheInitiale { get; set; }
+    [Parameter, SupplyParameterFromQuery(Name = "categorieId")] public int? CategorieInitiale { get; set; }
+    [Parameter, SupplyParameterFromQuery(Name = "auteurId")] public int? AuteurInitial { get; set; }
+    [Parameter, SupplyParameterFromQuery(Name = "tri")] public string? TriInitial { get; set; }
+
+    private readonly LivreQueryDto filtres = new() { Page = 1, TaillePage = 12, Tri = "titre" };
+    private IReadOnlyList<CategorieDto> categories = [];
+    private IReadOnlyList<AuteurDto> auteurs = [];
+    private PagedResult<LivreDto>? resultat;
+    private bool chargement = true;
+    private bool estAuthentifie;
+    private int livreIdEnCours;
+    private string? erreur;
+    private string? derniersParametres;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthState.GetAuthenticationStateAsync();
+        estAuthentifie = state.User.Identity?.IsAuthenticated == true;
+
+        try
+        {
+            categories = await Categories.GetAllAsync();
+            auteurs = await Authors.GetAllAsync();
+        }
+        catch (ApiRequestException ex)
+        {
+            erreur = ex.Message;
+        }
+
+        await AppliquerParametresQuery();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Blazor reuses the component for query-only navigation; reapply filters.
+        await AppliquerParametresQuery();
+    }
+
+    private async Task AppliquerParametresQuery()
+    {
+        var signature = $"{RechercheInitiale}|{CategorieInitiale}|{AuteurInitial}|{TriInitial}";
+        if (signature == derniersParametres) return;
+        derniersParametres = signature;
+
+        filtres.Recherche = RechercheInitiale ?? string.Empty;
+        filtres.CategorieId = CategorieInitiale;
+        filtres.AuteurId = AuteurInitial;
+        filtres.Tri = string.IsNullOrWhiteSpace(TriInitial) ? "titre" : TriInitial;
+        filtres.Page = 1;
+        await Charger();
+    }
+
+    private async Task Charger()
+    {
+        chargement = true;
+        erreur = null;
+        try
+        {
+            resultat = await Books.GetAsync(filtres);
+        }
+        catch (ApiRequestException ex)
+        {
+            erreur = ex.Message;
+        }
+        catch (HttpRequestException)
+        {
+            erreur = "Le catalogue est momentanément indisponible.";
+        }
+        finally
+        {
+            chargement = false;
+        }
+    }
+
+    private async Task OnRechercheChanged(ChangeEventArgs args)
+    {
+        filtres.Recherche = args.Value?.ToString() ?? string.Empty;
+        filtres.Page = 1;
+        await Charger();
+    }
+
+    private async Task AppliquerFiltres()
+    {
+        filtres.Page = 1;
+        await Charger();
+    }
+
+    private async Task ChangerPage(int page)
+    {
+        filtres.Page = page;
+        await Charger();
+    }
+
+    private async Task Reinitialiser()
+    {
+        filtres.Recherche = string.Empty;
+        filtres.CategorieId = null;
+        filtres.AuteurId = null;
+        filtres.Tri = "titre";
+        filtres.DisponibleUniquement = null;
+        filtres.Page = 1;
+        await Charger();
+    }
+
+    private async Task Emprunter(LivreDto livre)
+    {
+        livreIdEnCours = livre.Id;
+        try
+        {
+            await Loans.BorrowAsync(livre.Id);
+            Toasts.Success($"« {livre.Titre} » a été ajouté à vos emprunts.");
+            await Charger();
+        }
+        catch (ApiRequestException ex)
+        {
+            Toasts.Error(ex.Message);
+        }
+        finally
+        {
+            livreIdEnCours = 0;
+        }
+    }
+}

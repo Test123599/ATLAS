@@ -1,0 +1,153 @@
+@page "/membre"
+@attribute [Authorize(Policy = Policies.PeutEmprunter)]
+@inject IDashboardApi Dashboards
+@inject ToastService Toasts
+
+<PageTitle>Mon espace · ATLAS</PageTitle>
+
+@if (chargement)
+{
+    <LoadingState Message="Préparation de votre espace…" />
+}
+else if (donnees is null)
+{
+    <ErrorState Titre="Espace indisponible" Message="@(erreur ?? "Vos données n'ont pas pu être chargées.")" />
+}
+else
+{
+    <section class="dashboard-hero">
+        <div>
+            <p class="eyebrow">Espace membre</p>
+            <h1>Bonjour @donnees.Prenom.</h1>
+            <p>Voici l'état de vos lectures et vos prochaines échéances.</p>
+        </div>
+        <a class="btn" href="/catalogue">Explorer le catalogue →</a>
+    </section>
+
+    <div class="grid grid-4">
+        <StatTile Label="Emprunts actifs" Value="@($"{donnees.NombreEmpruntsActifs} / {donnees.LimiteEmprunts}")" Note="Limite de prêts simultanés" />
+        <StatTile Label="En retard" Value="@donnees.NombreEnRetard.ToString()" Note="Retour à régulariser" Tone="terracotta" />
+        <StatTile Label="Prochaine échéance" Value="@(donnees.ProchaineEcheance?.ToString("dd MMM") ?? "—")"
+                  Note="@(donnees.ProchaineEcheance.HasValue ? donnees.ProchaineEcheance.Value.ToString("dddd d MMMM yyyy") : "Aucun prêt en cours")" Tone="sage" />
+        <StatTile Label="Historique" Value="@donnees.NombreHistorique.ToString()" Note="Emprunts terminés" Tone="charcoal" />
+    </div>
+
+    @if (donnees.NombreEnRetard > 0)
+    {
+        <div class="validation-summary" style="margin-top:24px" role="status">
+            <strong>@donnees.NombreEnRetard emprunt(s) en retard.</strong> Veuillez les rapporter dès que possible auprès de la bibliothèque.
+        </div>
+    }
+
+    <div class="section-head">
+        <div><p class="eyebrow">En cours</p><h2>Vos emprunts actifs</h2></div>
+        <a href="/membre/emprunts">Voir le détail →</a>
+    </div>
+    <div class="panel">
+        @if (donnees.EmpruntsActifs.Count == 0)
+        {
+            <EmptyState Titre="Aucun emprunt en cours"
+                        Message="Votre collection est vide pour le moment. Trouvez votre prochaine lecture dans le catalogue.">
+                <a class="btn btn-outline" href="/catalogue">Découvrir des livres</a>
+            </EmptyState>
+        }
+        else
+        {
+            <div class="activity-list">
+                @foreach (var emprunt in donnees.EmpruntsActifs.OrderBy(e => e.DateRetourPrevue))
+                {
+                    <LoanItem Emprunt="emprunt" />
+                }
+            </div>
+        }
+    </div>
+
+    <div class="grid grid-2" style="margin-top:32px">
+        <div>
+            <div class="section-head"><div><p class="eyebrow">Repères</p><h2>Échéances à venir</h2></div></div>
+            <div class="panel">
+                @{ var aVenir = donnees.EmpruntsActifs.Where(e => !e.EstEnRetard).OrderBy(e => e.DateRetourPrevue).Take(5).ToList(); }
+                @if (aVenir.Count == 0)
+                {
+                    <p class="muted small" style="margin:0">Aucune échéance planifiée.</p>
+                }
+                else
+                {
+                    <div class="activity-list">
+                        @foreach (var emprunt in aVenir)
+                        {
+                            <div class="activity-row">
+                                <span class="activity-type">@emprunt.JoursRestants jours</span>
+                                <span>@emprunt.LivreTitre</span>
+                                <span class="small muted">@emprunt.DateRetourPrevue.ToString("dd MMM yyyy")</span>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+        <div>
+            <div class="section-head"><div><p class="eyebrow">Archive</p><h2>Historique récent</h2></div><a href="/membre/historique">Tout voir →</a></div>
+            <div class="panel">
+                @if (donnees.HistoriqueRecent.Count == 0)
+                {
+                    <p class="muted small" style="margin:0">Aucun emprunt terminé pour le moment.</p>
+                }
+                else
+                {
+                    <div class="activity-list">
+                        @foreach (var emprunt in donnees.HistoriqueRecent.Take(5))
+                        {
+                            <div class="activity-row">
+                                <span class="activity-type">Terminé</span>
+                                <span>@emprunt.LivreTitre</span>
+                                <span class="small muted">@emprunt.DateRetourEffective?.ToString("dd MMM yyyy")</span>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    @if (donnees.LivresRecents.Count > 0)
+    {
+        <div class="section-head">
+            <div><p class="eyebrow">Sélection</p><h2>Nouveautés à découvrir</h2></div>
+            <a href="/catalogue?tri=-ajout">Tout le catalogue →</a>
+        </div>
+        <div class="grid grid-books">
+            @foreach (var livre in donnees.LivresRecents.Take(5))
+            {
+                <BookCard Livre="livre" />
+            }
+        </div>
+    }
+}
+
+@code {
+    private MemberDashboardDto? donnees;
+    private bool chargement = true;
+    private string? erreur;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            donnees = await Dashboards.GetMemberAsync();
+        }
+        catch (ApiRequestException ex)
+        {
+            erreur = ex.Message;
+            Toasts.Error(ex.Message);
+        }
+        catch (HttpRequestException)
+        {
+            erreur = "Le service est momentanément indisponible.";
+        }
+        finally
+        {
+            chargement = false;
+        }
+    }
+}

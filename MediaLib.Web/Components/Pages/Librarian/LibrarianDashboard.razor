@@ -1,0 +1,124 @@
+@page "/bibliothecaire"
+@attribute [Authorize(Policy = Policies.PeutGererCatalogue)]
+@inject IDashboardApi Dashboards
+
+<PageTitle>Activité · ATLAS</PageTitle>
+
+@if (chargement)
+{
+    <LoadingState Message="Compilation de l'activité de la bibliothèque…" />
+}
+else if (donnees is null)
+{
+    <ErrorState Message="@(erreur ?? "Les indicateurs n'ont pas pu être chargés.")" OnRetry="Charger" />
+}
+else
+{
+    <section class="dashboard-hero">
+        <div>
+            <p class="eyebrow">Espace bibliothèque</p>
+            <h1>Activité de la collection</h1>
+            <p>Une vue en temps réel du catalogue, des prêts et des retours.</p>
+        </div>
+        <div class="row">
+            <a class="btn" href="/bibliothecaire/livres">Gérer les livres</a>
+            <a class="btn" href="/bibliothecaire/retours" style="background:var(--terracotta);color:var(--forest)">Enregistrer un retour</a>
+        </div>
+    </section>
+
+    <div class="grid grid-4">
+        <StatTile Label="Ouvrages" Value="@donnees.Catalogue.TotalLivres.ToString()" Note="@($"{donnees.Catalogue.NombreAuteurs} auteurs · {donnees.Catalogue.NombreCategories} collections")" />
+        <StatTile Label="Exemplaires disponibles" Value="@($"{donnees.Catalogue.ExemplairesDisponibles} / {donnees.Catalogue.ExemplairesTotal}")" Note="Sur l'ensemble du catalogue" Tone="sage" />
+        <StatTile Label="Prêts actifs" Value="@donnees.EmpruntsActifs.ToString()" Note="@($"{donnees.EmpruntsAujourdhui} aujourd'hui")" Tone="terracotta" />
+        <StatTile Label="En retard" Value="@donnees.EmpruntsEnRetard.ToString()" Note="À régulariser" Tone="charcoal" />
+    </div>
+
+    <div class="grid grid-2" style="margin-top:34px">
+        <section>
+            <div class="section-head"><div><p class="eyebrow">Flux</p><h2>Activité récente</h2></div><a href="/bibliothecaire/emprunts">Tous les prêts →</a></div>
+            <div class="panel">
+                @if (donnees.ActiviteRecente.Count == 0)
+                {
+                    <p class="muted small" style="margin:0">Aucune activité enregistrée.</p>
+                }
+                else
+                {
+                    <div class="activity-list">
+                        @foreach (var activite in donnees.ActiviteRecente.Take(8))
+                        {
+                            <div class="activity-row">
+                                <span class="activity-type">@activite.Type</span>
+                                <span>
+                                    <a href="/livres/@activite.LivreId">@activite.LivreTitre</a>
+                                    <small class="muted"> · @activite.UtilisateurNom</small>
+                                </span>
+                                <span class="small @(activite.EstEnRetard ? "date-overdue" : "muted")">@activite.Date.ToString("dd MMM · HH:mm")</span>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </section>
+
+        <section>
+            <div class="section-head"><div><p class="eyebrow">Retours</p><h2>Derniers retours</h2></div><a href="/bibliothecaire/retours">Traiter →</a></div>
+            <div class="panel">
+                <p class="stat-note" style="margin-bottom:14px">@donnees.RetoursCetteSemaine retour(s) enregistré(s) cette semaine.</p>
+                @if (donnees.RetoursRecents.Count == 0)
+                {
+                    <p class="muted small" style="margin:0">Aucun retour récent.</p>
+                }
+                else
+                {
+                    <div class="activity-list">
+                        @foreach (var emprunt in donnees.RetoursRecents.Take(8))
+                        {
+                            <div class="activity-row">
+                                <span class="activity-type">Rendu</span>
+                                <span>@emprunt.LivreTitre</span>
+                                <span class="small muted">@emprunt.DateRetourEffective?.ToString("dd MMM")</span>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </section>
+    </div>
+
+    <div class="grid grid-4" style="margin-top:32px">
+        <a class="category-tile" href="/bibliothecaire/livres"><strong>Livres</strong><span>Ajouter, modifier, retirer</span></a>
+        <a class="category-tile" href="/bibliothecaire/auteurs"><strong>Auteurs</strong><span>Gérer les notices</span></a>
+        <a class="category-tile" href="/bibliothecaire/categories"><strong>Catégories</strong><span>Organiser les collections</span></a>
+        <a class="category-tile" href="/bibliothecaire/emprunts/en-retard"><strong>Retards</strong><span>Suivre les échéances dépassées</span></a>
+    </div>
+}
+
+@code {
+    private LibrarianDashboardDto? donnees;
+    private bool chargement = true;
+    private string? erreur;
+
+    protected override async Task OnInitializedAsync() => await Charger();
+
+    private async Task Charger()
+    {
+        chargement = true;
+        erreur = null;
+        try
+        {
+            donnees = await Dashboards.GetLibrarianAsync();
+        }
+        catch (ApiRequestException ex)
+        {
+            erreur = ex.Message;
+        }
+        catch (HttpRequestException)
+        {
+            erreur = "Le service est momentanément indisponible.";
+        }
+        finally
+        {
+            chargement = false;
+        }
+    }
+}

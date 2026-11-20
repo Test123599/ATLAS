@@ -1,0 +1,25 @@
+@if (TotalPages > 1)
+{
+    <nav class="pagination" aria-label="Pagination">
+        <button type="button" class="page-arrow" disabled="@(!APrecedent)" @onclick="() => Changer(Page - 1)">← Précédent</button>
+        <span class="page-counter">Page @Page / @TotalPages</span>
+        <button type="button" class="page-arrow" disabled="@(!ASuivant)" @onclick="() => Changer(Page + 1)">Suivant →</button>
+    </nav>
+}
+
+@code {
+    [Parameter] public int Page { get; set; } = 1;
+    [Parameter] public int TotalPages { get; set; }
+    [Parameter] public EventCallback<int> OnPageChanged { get; set; }
+
+    private bool APrecedent => Page > 1;
+    private bool ASuivant => Page < TotalPages;
+
+    private async Task Changer(int page)
+    {
+        if (page >= 1 && page <= TotalPages)
+        {
+            await OnPageChanged.InvokeAsync(page);
+        }
+    }
+}

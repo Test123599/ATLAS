@@ -1,0 +1,11 @@
+/* ATLAS: only framework-level error UI here; all product styling lives in css/atlas.css. */
+.blazor-error-boundary {
+    background: #7e3229;
+    color: #fffdf8;
+    padding: 1rem 1.2rem;
+    border-radius: 3px;
+}
+
+.blazor-error-boundary::after {
+    content: "Une erreur inattendue s'est produite.";
+}

@@ -1,0 +1,50 @@
+<article class="loan-item">
+    <div class="loan-cover"><CoverArt Titre="@Emprunt.LivreTitre" Auteur="@Emprunt.AuteurNom" Isbn="@Emprunt.Isbn" Url="@Emprunt.CouvertureUrl" /></div>
+    <div class="loan-main">
+        <div class="loan-heading">
+            <a href="/livres/@Emprunt.LivreId">@Emprunt.LivreTitre</a>
+            <span class="loan-author">@Emprunt.AuteurNom</span>
+            @if (AfficherUtilisateur)
+            {
+                <span class="loan-user">@Emprunt.UtilisateurNom</span>
+            }
+        </div>
+        <div class="loan-dates">
+            <span>Emprunté le @Emprunt.DateEmprunt.ToString("dd MMM yyyy")</span>
+            <span class="@(Emprunt.EstEnRetard ? "date-overdue" : "")">Retour prévu le @Emprunt.DateRetourPrevue.ToString("dd MMM yyyy")</span>
+            @if (Emprunt.DateRetourEffective.HasValue)
+            {
+                <span>Rendu le @Emprunt.DateRetourEffective.Value.ToString("dd MMM yyyy")</span>
+            }
+        </div>
+    </div>
+    <div class="loan-right">
+        @if (Emprunt.DateRetourEffective.HasValue)
+        {
+            <StatusBadge Text="Terminé" Tone="muted" />
+        }
+        else if (Emprunt.EstEnRetard)
+        {
+            <StatusBadge Text="En retard" Tone="danger" />
+        }
+        else
+        {
+            <StatusBadge Text="@($"{Emprunt.JoursRestants} j restants")" Tone="sage" />
+        }
+
+        @if (AfficherRetour && Emprunt.DateRetourEffective is null)
+        {
+            <button class="btn btn-solid btn-small" type="button" disabled="@EnCours" @onclick="() => OnReturn.InvokeAsync(Emprunt.Id)">
+                @(EnCours ? "Traitement…" : "Enregistrer le retour")
+            </button>
+        }
+    </div>
+</article>
+
+@code {
+    [Parameter, EditorRequired] public EmpruntDto Emprunt { get; set; } = default!;
+    [Parameter] public bool AfficherUtilisateur { get; set; }
+    [Parameter] public bool AfficherRetour { get; set; }
+    [Parameter] public bool EnCours { get; set; }
+    [Parameter] public EventCallback<int> OnReturn { get; set; }
+}

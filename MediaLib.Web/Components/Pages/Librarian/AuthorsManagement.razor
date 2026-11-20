@@ -1,0 +1,215 @@
+@page "/bibliothecaire/auteurs"
+@attribute [Authorize(Policy = Policies.PeutGererCatalogue)]
+@inject IAuthorsApi Authors
+@inject ToastService Toasts
+
+<PageTitle>Gestion des auteurs · ATLAS</PageTitle>
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Espace bibliothèque</p>
+        <h1>Gestion des auteurs</h1>
+        <p>Un auteur ne peut pas être supprimé tant que des ouvrages lui sont associés.</p>
+    </div>
+    <button class="btn btn-solid" type="button" @onclick="Nouveau">+ Nouvel auteur</button>
+</div>
+
+<div class="grid" style="@GrilleStyle">
+    <div>
+        @if (chargement)
+        {
+            <LoadingState Message="Chargement des auteurs…" />
+        }
+        else if (erreur is not null)
+        {
+            <ErrorState Message="@erreur" OnRetry="Charger" />
+        }
+        else if (auteurs.Count == 0)
+        {
+            <EmptyState Titre="Aucun auteur" Message="Ajoutez le premier auteur de la collection.">
+                <button class="btn btn-outline" type="button" @onclick="Nouveau">Ajouter un auteur</button>
+            </EmptyState>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                        <tr><th>Auteur</th><th>Biographie</th><th>Ouvrages</th><th style="text-align:right">Actions</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var auteur in auteurs)
+                        {
+                            <tr>
+                                <td><strong>@auteur.NomComplet</strong></td>
+                                <td class="muted">@(string.IsNullOrWhiteSpace(auteur.Biographie) ? "—" : Resumer(auteur.Biographie, 90))</td>
+                                <td><StatusBadge Text="@auteur.NombreLivres.ToString()" Tone="@(auteur.NombreLivres > 0 ? "sage" : "muted")" /></td>
+                                <td>
+                                    <div class="cell-actions">
+                                        <button class="btn btn-small btn-outline" type="button" @onclick="() => Modifier(auteur)">Modifier</button>
+                                        <button class="btn btn-small btn-quiet" type="button" @onclick="() => auteurASupprimer = auteur">Supprimer</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+
+    @if (formulaireOuvert)
+    {
+        <aside class="panel">
+            <p class="eyebrow">@(modeEdition ? "Modification" : "Nouvelle fiche")</p>
+            <h2 style="font-size:1.5rem;margin-bottom:18px">@(modeEdition ? "Modifier l'auteur" : "Ajouter un auteur")</h2>
+
+            <EditForm Model="modele" OnValidSubmit="Enregistrer" class="form-grid">
+                <DataAnnotationsValidator />
+                <ValidationSummary />
+                <div class="field">
+                    <label for="author-firstname">Prénom</label>
+                    <InputText id="author-firstname" @bind-Value="modele.Prenom" />
+                    <ValidationMessage For="() => modele.Prenom" />
+                </div>
+                <div class="field">
+                    <label for="author-lastname">Nom</label>
+                    <InputText id="author-lastname" @bind-Value="modele.Nom" />
+                    <ValidationMessage For="() => modele.Nom" />
+                </div>
+                <div class="field">
+                    <label for="author-bio">Biographie</label>
+                    <InputTextArea id="author-bio" @bind-Value="modele.Biographie" />
+                    <ValidationMessage For="() => modele.Biographie" />
+                </div>
+                <div class="form-actions">
+                    <button class="btn btn-solid" type="submit" disabled="@occupation">@(occupation ? "…" : "Enregistrer")</button>
+                    <button class="btn btn-quiet" type="button" @onclick="FermerFormulaire">Annuler</button>
+                </div>
+            </EditForm>
+        </aside>
+    }
+</div>
+
+@if (auteurASupprimer is not null)
+{
+    <ConfirmDialog Titre="Supprimer cet auteur ?"
+                   Message="@($"La fiche de {auteurASupprimer.NomComplet} sera supprimée. L'opération sera refusée si des livres y sont associés.")"
+                   ConfirmLabel="Supprimer" Danger="true"
+                   OnConfirm="Supprimer" OnCancel="() => auteurASupprimer = null" />
+}
+
+@code {
+    private readonly CreateAuteurRequest modele = new();
+    private IReadOnlyList<AuteurDto> auteurs = [];
+    private AuteurDto? auteurASupprimer;
+    private int? auteurIdEnCours;
+    private bool formulaireOuvert;
+    private bool modeEdition;
+    private bool chargement = true;
+    private bool occupation;
+    private string? erreur;
+
+    protected override async Task OnInitializedAsync() => await Charger();
+
+    private async Task Charger()
+    {
+        chargement = true;
+        erreur = null;
+        try
+        {
+            auteurs = await Authors.GetAllAsync();
+        }
+        catch (ApiRequestException ex)
+        {
+            erreur = ex.Message;
+        }
+        catch (HttpRequestException)
+        {
+            erreur = "Le service est momentanément indisponible.";
+        }
+        finally
+        {
+            chargement = false;
+        }
+    }
+
+    private void Nouveau()
+    {
+        modeEdition = false;
+        auteurIdEnCours = null;
+        modele.Prenom = string.Empty;
+        modele.Nom = string.Empty;
+        modele.Biographie = string.Empty;
+        formulaireOuvert = true;
+    }
+
+    private void Modifier(AuteurDto auteur)
+    {
+        modeEdition = true;
+        auteurIdEnCours = auteur.Id;
+        modele.Prenom = auteur.Prenom;
+        modele.Nom = auteur.Nom;
+        modele.Biographie = auteur.Biographie;
+        formulaireOuvert = true;
+    }
+
+    private void FermerFormulaire() => formulaireOuvert = false;
+
+    private async Task Enregistrer()
+    {
+        occupation = true;
+        try
+        {
+            if (modeEdition && auteurIdEnCours.HasValue)
+            {
+                await Authors.UpdateAsync(auteurIdEnCours.Value, new UpdateAuteurRequest
+                {
+                    Prenom = modele.Prenom,
+                    Nom = modele.Nom,
+                    Biographie = modele.Biographie,
+                });
+                Toasts.Success("La fiche auteur a été mise à jour.");
+            }
+            else
+            {
+                await Authors.CreateAsync(modele);
+                Toasts.Success("L'auteur a été ajouté.");
+            }
+
+            formulaireOuvert = false;
+            await Charger();
+        }
+        catch (ApiRequestException ex)
+        {
+            Toasts.Error(ex.Message);
+        }
+        finally
+        {
+            occupation = false;
+        }
+    }
+
+    private async Task Supprimer()
+    {
+        if (auteurASupprimer is null) return;
+        try
+        {
+            await Authors.DeleteAsync(auteurASupprimer.Id);
+            Toasts.Success("L'auteur a été supprimé.");
+            auteurASupprimer = null;
+            await Charger();
+        }
+        catch (ApiRequestException ex)
+        {
+            Toasts.Error(ex.Message);
+            auteurASupprimer = null;
+        }
+    }
+
+    private string GrilleStyle
+        => $"grid-template-columns:minmax(0,1fr) {(formulaireOuvert ? "360px" : "0")};align-items:start;transition:grid-template-columns .2s ease";
+
+    private static string Resumer(string text, int max)
+        => text.Length <= max ? text : text[..max].TrimEnd() + "…";
+}

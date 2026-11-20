@@ -1,0 +1,18 @@
+@page "/bibliothecaire/emprunts"
+@attribute [Authorize(Policy = Policies.PeutGererCatalogue)]
+
+<PageTitle>Tous les prêts · ATLAS</PageTitle>
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Espace bibliothèque</p>
+        <h1>Tous les prêts</h1>
+        <p>Visualisez l'ensemble des emprunts, actifs et terminés, avec recherche et pagination.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-outline" href="/bibliothecaire/emprunts/en-retard">Voir les retards</a>
+        <a class="btn btn-solid" href="/bibliothecaire/retours">Enregistrer un retour</a>
+    </div>
+</div>
+
+<LoanDirectory EnRetardUniquement="false" />

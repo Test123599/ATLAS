@@ -1,0 +1,15 @@
+<div class="stat-tile stat-tile-@Tone">
+    <span class="stat-label">@Label</span>
+    <strong class="stat-value">@Value</strong>
+    @if (!string.IsNullOrWhiteSpace(Note))
+    {
+        <span class="stat-note">@Note</span>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string Value { get; set; } = string.Empty;
+    [Parameter] public string Note { get; set; } = string.Empty;
+    [Parameter] public string Tone { get; set; } = "forest";
+}

@@ -1,0 +1,89 @@
+@page "/membre/emprunts"
+@attribute [Authorize(Policy = Policies.PeutEmprunter)]
+@inject ILoansApi Loans
+
+<PageTitle>Mes emprunts · ATLAS</PageTitle>
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Espace membre</p>
+        <h1>Mes emprunts actifs</h1>
+        <p>Suivez vos prêts en cours et leurs dates de retour. La durée d'un prêt est de 21 jours.</p>
+    </div>
+    <a class="btn btn-outline" href="/catalogue">Emprunter un livre</a>
+</div>
+
+@if (chargement)
+{
+    <LoadingState Message="Consultation de vos emprunts…" />
+}
+else if (erreur is not null)
+{
+    <ErrorState Message="@erreur" OnRetry="Charger" />
+}
+else if (emprunts is null)
+{
+    <EmptyState />
+}
+else
+{
+    <div class="spread" style="margin-bottom:18px">
+        <p class="small muted" style="margin:0">@emprunts.Actifs.Count emprunt(s) actif(s) sur @emprunts.LimiteEmprunts autorisés</p>
+        <div class="spread" style="gap:6px">
+            <button class="filter-chip @(vue == "actifs" ? "active" : "")" type="button" @onclick="VoirActifs">En cours</button>
+            <a class="filter-chip" href="/membre/historique">Historique</a>
+        </div>
+    </div>
+
+    <div class="panel">
+        @if (vue == "actifs" && emprunts.Actifs.Count == 0)
+        {
+            <EmptyState Titre="Aucun emprunt actif"
+                        Message="Vous n'avez aucun livre en cours de prêt. Explorez le catalogue pour commencer.">
+                <a class="btn btn-outline" href="/catalogue">Voir le catalogue</a>
+            </EmptyState>
+        }
+        else
+        {
+            <div class="activity-list">
+                @foreach (var emprunt in emprunts.Actifs.OrderBy(e => e.DateRetourPrevue))
+                {
+                    <LoanItem Emprunt="emprunt" />
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private MesEmpruntsDto? emprunts;
+    private string vue = "actifs";
+    private bool chargement = true;
+    private string? erreur;
+
+    protected override async Task OnInitializedAsync() => await Charger();
+
+    private void VoirActifs() => vue = "actifs";
+
+    private async Task Charger()
+    {
+        chargement = true;
+        erreur = null;
+        try
+        {
+            emprunts = await Loans.GetMineAsync();
+        }
+        catch (ApiRequestException ex)
+        {
+            erreur = ex.Message;
+        }
+        catch (HttpRequestException)
+        {
+            erreur = "Le service des emprunts est momentanément indisponible.";
+        }
+        finally
+        {
+            chargement = false;
+        }
+    }
+}

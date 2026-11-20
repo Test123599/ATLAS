@@ -1,0 +1,26 @@
+﻿@page "/Error"
+@layout MainLayout
+@using System.Diagnostics
+
+<section class="state-page">
+    <p class="eyebrow">Erreur inattendue</p>
+    <h1>Une erreur est survenue</h1>
+    <p class="state-copy">Le service n'a pas pu traiter votre demande. Vous pouvez réessayer ou revenir à l'accueil.</p>
+    @if (!string.IsNullOrEmpty(RequestId))
+    {
+        <p class="small muted">Référence de la demande : <code>@RequestId</code></p>
+    }
+    <div class="hero-actions" style="justify-content:center">
+        <a class="btn btn-solid" href="/">Retour à l'accueil</a>
+        <a class="btn btn-outline" href="/catalogue">Parcourir le catalogue</a>
+    </div>
+</section>
+
+@code {
+    [CascadingParameter] private HttpContext? HttpContext { get; set; }
+
+    private string? RequestId { get; set; }
+
+    protected override void OnInitialized()
+        => RequestId = Activity.Current?.Id ?? HttpContext?.TraceIdentifier;
+}

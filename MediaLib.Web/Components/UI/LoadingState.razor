@@ -1,0 +1,8 @@
+<div class="state-panel" role="status" aria-live="polite">
+    <div class="loading-mark"><span></span><span></span><span></span></div>
+    <p>@(string.IsNullOrWhiteSpace(Message) ? "Chargement des données…" : Message)</p>
+</div>
+
+@code {
+    [Parameter] public string Message { get; set; } = string.Empty;
+}

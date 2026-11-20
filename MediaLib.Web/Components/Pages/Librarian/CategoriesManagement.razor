@@ -1,0 +1,188 @@
+@page "/bibliothecaire/categories"
+@attribute [Authorize(Policy = Policies.PeutGererCatalogue)]
+@inject ICategoriesApi Categories
+@inject ToastService Toasts
+
+<PageTitle>Gestion des catégories · ATLAS</PageTitle>
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Espace bibliothèque</p>
+        <h1>Gestion des catégories</h1>
+        <p>Organisez les collections du catalogue. Une catégorie utilisée ne peut pas être supprimée.</p>
+    </div>
+    <button class="btn btn-solid" type="button" @onclick="Nouveau">+ Nouvelle catégorie</button>
+</div>
+
+<div class="grid" style="@GrilleStyle">
+    <div>
+        @if (chargement)
+        {
+            <LoadingState Message="Chargement des collections…" />
+        }
+        else if (erreur is not null)
+        {
+            <ErrorState Message="@erreur" OnRetry="Charger" />
+        }
+        else if (categories.Count == 0)
+        {
+            <EmptyState Titre="Aucune catégorie" Message="Créez la première collection du catalogue.">
+                <button class="btn btn-outline" type="button" @onclick="Nouveau">Ajouter une catégorie</button>
+            </EmptyState>
+        }
+        else
+        {
+            <div class="grid grid-3">
+                @foreach (var categorie in categories)
+                {
+                    <div class="panel-flat" style="padding:20px;border:1px solid var(--line);border-top:2px solid var(--forest)">
+                        <div class="spread">
+                            <h3>@categorie.Libelle</h3>
+                            <StatusBadge Text="@($"{categorie.NombreLivres} livre(s)")" Tone="@(categorie.NombreLivres > 0 ? "sage" : "muted")" />
+                        </div>
+                        <p class="small muted" style="margin:10px 0 18px">
+                            @(categorie.NombreLivres > 0 ? "Collection active du catalogue." : "Collection vide, prête à être utilisée.")
+                        </p>
+                        <div class="row">
+                            <a class="btn btn-small btn-outline" href="/catalogue?categorieId=@categorie.Id">Voir les livres</a>
+                            <button class="btn btn-small btn-quiet" type="button" @onclick="() => Modifier(categorie)">Modifier</button>
+                            <button class="btn btn-small btn-quiet" type="button" @onclick="() => categorieASupprimer = categorie">Supprimer</button>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+
+    @if (formulaireOuvert)
+    {
+        <aside class="panel">
+            <p class="eyebrow">@(modeEdition ? "Modification" : "Nouvelle collection")</p>
+            <h2 style="font-size:1.5rem;margin-bottom:18px">@(modeEdition ? "Modifier la catégorie" : "Ajouter une catégorie")</h2>
+            <EditForm Model="modele" OnValidSubmit="Enregistrer" class="form-grid">
+                <DataAnnotationsValidator />
+                <ValidationSummary />
+                <div class="field">
+                    <label for="category-label">Libellé</label>
+                    <InputText id="category-label" @bind-Value="modele.Libelle" />
+                    <ValidationMessage For="() => modele.Libelle" />
+                </div>
+                <div class="form-actions">
+                    <button class="btn btn-solid" type="submit" disabled="@occupation">@(occupation ? "…" : "Enregistrer")</button>
+                    <button class="btn btn-quiet" type="button" @onclick="FermerFormulaire">Annuler</button>
+                </div>
+            </EditForm>
+        </aside>
+    }
+</div>
+
+@if (categorieASupprimer is not null)
+{
+    <ConfirmDialog Titre="Supprimer cette catégorie ?"
+                   Message="@($"La collection « {categorieASupprimer.Libelle} » sera supprimée. L'opération sera refusée si des livres y sont associés.")"
+                   ConfirmLabel="Supprimer" Danger="true"
+                   OnConfirm="Supprimer" OnCancel="() => categorieASupprimer = null" />
+}
+
+@code {
+    private readonly CreateCategorieRequest modele = new();
+    private IReadOnlyList<CategorieDto> categories = [];
+    private CategorieDto? categorieASupprimer;
+    private int? categorieIdEnCours;
+    private bool formulaireOuvert;
+    private bool modeEdition;
+    private bool chargement = true;
+    private bool occupation;
+    private string? erreur;
+
+    private string GrilleStyle
+        => $"grid-template-columns:minmax(0,1fr) {(formulaireOuvert ? "320px" : "0")};align-items:start;transition:grid-template-columns .2s ease";
+
+    protected override async Task OnInitializedAsync() => await Charger();
+
+    private async Task Charger()
+    {
+        chargement = true;
+        erreur = null;
+        try
+        {
+            categories = await Categories.GetAllAsync();
+        }
+        catch (ApiRequestException ex)
+        {
+            erreur = ex.Message;
+        }
+        catch (HttpRequestException)
+        {
+            erreur = "Le service est momentanément indisponible.";
+        }
+        finally
+        {
+            chargement = false;
+        }
+    }
+
+    private void Nouveau()
+    {
+        modeEdition = false;
+        categorieIdEnCours = null;
+        modele.Libelle = string.Empty;
+        formulaireOuvert = true;
+    }
+
+    private void Modifier(CategorieDto categorie)
+    {
+        modeEdition = true;
+        categorieIdEnCours = categorie.Id;
+        modele.Libelle = categorie.Libelle;
+        formulaireOuvert = true;
+    }
+
+    private void FermerFormulaire() => formulaireOuvert = false;
+
+    private async Task Enregistrer()
+    {
+        occupation = true;
+        try
+        {
+            if (modeEdition && categorieIdEnCours.HasValue)
+            {
+                await Categories.UpdateAsync(categorieIdEnCours.Value, new UpdateCategorieRequest { Libelle = modele.Libelle });
+                Toasts.Success("La catégorie a été mise à jour.");
+            }
+            else
+            {
+                await Categories.CreateAsync(modele);
+                Toasts.Success("La catégorie a été ajoutée.");
+            }
+
+            formulaireOuvert = false;
+            await Charger();
+        }
+        catch (ApiRequestException ex)
+        {
+            Toasts.Error(ex.Message);
+        }
+        finally
+        {
+            occupation = false;
+        }
+    }
+
+    private async Task Supprimer()
+    {
+        if (categorieASupprimer is null) return;
+        try
+        {
+            await Categories.DeleteAsync(categorieASupprimer.Id);
+            Toasts.Success("La catégorie a été supprimée.");
+            categorieASupprimer = null;
+            await Charger();
+        }
+        catch (ApiRequestException ex)
+        {
+            Toasts.Error(ex.Message);
+            categorieASupprimer = null;
+        }
+    }
+}

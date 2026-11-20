@@ -1,0 +1,163 @@
+@page "/admin/utilisateurs/{Id}"
+@attribute [Authorize(Policy = Policies.EstAdmin)]
+@inject IAdminApi Admin
+@inject ToastService Toasts
+@inject NavigationManager Navigation
+
+<PageTitle>Détail utilisateur · ATLAS</PageTitle>
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Administration</p>
+        <h1>Détail du compte</h1>
+        <p>Informations personnelles, rôles et historique des emprunts de l'utilisateur.</p>
+    </div>
+    <a class="btn btn-outline" href="/admin/utilisateurs">← Tous les utilisateurs</a>
+</div>
+
+@if (chargement)
+{
+    <LoadingState Message="Chargement du compte…" />
+}
+else if (introuvable)
+{
+    <EmptyState Titre="Compte introuvable" Message="Cet utilisateur n'existe plus.">
+        <a class="btn btn-outline" href="/admin/utilisateurs">Retour à la liste</a>
+    </EmptyState>
+}
+else if (utilisateur is not null)
+{
+    <div class="grid grid-2">
+        <section class="panel">
+            <p class="eyebrow">Identité</p>
+            <h2 style="font-size:1.7rem">@utilisateur.Prenom @utilisateur.Nom</h2>
+            <p class="muted">@utilisateur.Email</p>
+
+            <div class="detail-facts">
+                <div class="detail-fact"><span>Inscription</span><strong>@utilisateur.DateInscription.ToString("dd MMMM yyyy")</strong></div>
+                <div class="detail-fact"><span>État du compte</span><strong>@(utilisateur.EstActif ? "Actif" : "Inactif")</strong></div>
+                <div class="detail-fact"><span>Verrouillage</span><strong>@(utilisateur.EstVerrouille ? $"Jusqu'au {utilisateur.FinVerrouillage:dd MMM HH:mm}" : "Aucun")</strong></div>
+                <div class="detail-fact"><span>Emprunts</span><strong>@utilisateur.Emprunts.Count(e => e.DateRetourEffective is null) actif(s)</strong></div>
+            </div>
+
+            <div class="row">
+                @foreach (var role in utilisateur.Roles)
+                {
+                    <StatusBadge Text="@role" Tone="@(role == Roles.Admin ? "terracotta" : role == Roles.Bibliothecaire ? "sage" : "muted")" />
+                }
+            </div>
+
+            <div class="form-actions" style="margin-top:24px">
+                <a class="btn btn-outline" href="/admin/roles?utilisateur=@Uri.EscapeDataString(utilisateur.Id)">Modifier les rôles</a>
+                <a class="btn btn-quiet" href="/admin/activation?utilisateur=@Uri.EscapeDataString(utilisateur.Id)">Activer / désactiver</a>
+            </div>
+
+            <hr class="rule" />
+            <p class="eyebrow">Modifier le nom</p>
+            @if (!string.IsNullOrEmpty(erreurEdition))
+            {
+                <div class="validation-summary" role="alert">@erreurEdition</div>
+            }
+            <EditForm Model="identite" OnValidSubmit="Enregistrer" class="form-grid">
+                <DataAnnotationsValidator />
+                <ValidationSummary />
+                <div class="form-row">
+                    <div class="field">
+                        <label for="admin-prenom">Prénom</label>
+                        <InputText id="admin-prenom" @bind-Value="identite.Prenom" />
+                        <ValidationMessage For="() => identite.Prenom" />
+                    </div>
+                    <div class="field">
+                        <label for="admin-nom">Nom</label>
+                        <InputText id="admin-nom" @bind-Value="identite.Nom" />
+                        <ValidationMessage For="() => identite.Nom" />
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button class="btn btn-solid" type="submit" disabled="@occupation">@(occupation ? "…" : "Enregistrer")</button>
+                </div>
+            </EditForm>
+        </section>
+
+        <section>
+            <div class="section-head"><div><p class="eyebrow">Emprunts</p><h2>Historique du compte</h2></div></div>
+            <div class="panel">
+                @if (utilisateur.Emprunts.Count == 0)
+                {
+                    <p class="muted small" style="margin:0">Aucun emprunt enregistré pour ce compte.</p>
+                }
+                else
+                {
+                    <div class="activity-list">
+                        @foreach (var emprunt in utilisateur.Emprunts.OrderByDescending(e => e.DateEmprunt))
+                        {
+                            <LoanItem Emprunt="emprunt" />
+                        }
+                    </div>
+                }
+            </div>
+        </section>
+    </div>
+}
+
+@code {
+    [Parameter] public string Id { get; set; } = string.Empty;
+
+    private UtilisateurDetailDto? utilisateur;
+    private readonly UpdateUtilisateurRequest identite = new();
+    private bool chargement = true;
+    private bool occupation;
+    private bool introuvable;
+    private string? erreurEdition;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            utilisateur = await Admin.GetUserAsync(Id);
+            identite.Prenom = utilisateur.Prenom;
+            identite.Nom = utilisateur.Nom;
+        }
+        catch (ApiRequestException ex) when (ex.EstNotFound)
+        {
+            introuvable = true;
+        }
+        catch (ApiRequestException ex)
+        {
+            Toasts.Error(ex.Message);
+        }
+        catch (HttpRequestException)
+        {
+            Toasts.Error("Le service d'administration est momentanément indisponible.");
+        }
+        finally
+        {
+            chargement = false;
+        }
+    }
+
+    private async Task Enregistrer()
+    {
+        occupation = true;
+        erreurEdition = null;
+        try
+        {
+            await Admin.UpdateUserAsync(Id, identite);
+            utilisateur = utilisateur! with
+            {
+                Prenom = identite.Prenom,
+                Nom = identite.Nom,
+            };
+            Toasts.Success("Les informations ont été enregistrées.");
+        }
+        catch (ApiRequestException ex)
+        {
+            erreurEdition = ex.Message;
+            Toasts.Error(ex.Message);
+        }
+        finally
+        {
+            occupation = false;
+        }
+    }
+}

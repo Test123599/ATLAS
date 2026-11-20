@@ -1,0 +1,36 @@
+@if (!string.IsNullOrWhiteSpace(Url) && !imageFailed)
+{
+    <div class="cover-frame cover-image">
+        <img src="@Url" alt="Couverture de @Titre" loading="lazy" @onerror="() => imageFailed = true" />
+    </div>
+}
+else
+{
+    <div class="cover-frame cover-fallback cover-tone-@Tone">
+        <span class="cover-ornament">A</span>
+        <div class="cover-body">
+            <span class="cover-author">@Auteur</span>
+            <strong class="cover-title">@Titre</strong>
+        </div>
+        <span class="cover-isbn">@Isbn</span>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public string Titre { get; set; } = string.Empty;
+    [Parameter] public string Auteur { get; set; } = string.Empty;
+    [Parameter] public string Isbn { get; set; } = string.Empty;
+    [Parameter] public string? Url { get; set; }
+    [Parameter] public bool Compact { get; set; }
+
+    private bool imageFailed;
+
+    private int Tone
+    {
+        get
+        {
+            var text = string.IsNullOrWhiteSpace(Isbn) ? Titre : Isbn;
+            return Math.Abs(text.GetHashCode()) % 5;
+        }
+    }
+}

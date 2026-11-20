@@ -1,0 +1,87 @@
+@page "/membre/historique"
+@attribute [Authorize(Policy = Policies.PeutEmprunter)]
+@inject ILoansApi Loans
+
+<PageTitle>Historique · ATLAS</PageTitle>
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Espace membre</p>
+        <h1>Historique des emprunts</h1>
+        <p>L'ensemble des ouvrages que vous avez déjà rapportés, du plus récent au plus ancien.</p>
+    </div>
+    <a class="btn btn-outline" href="/membre/emprunts">Emprunts en cours</a>
+</div>
+
+@if (chargement)
+{
+    <LoadingState Message="Consultation de votre historique…" />
+}
+else if (erreur is not null)
+{
+    <ErrorState Message="@erreur" OnRetry="Charger" />
+}
+else if (historique is null)
+{
+    <EmptyState />
+}
+else
+{
+    <div class="spread" style="margin-bottom:18px">
+        <p class="small muted" style="margin:0">@historique.Count emprunt(s) terminé(s)</p>
+        <div class="spread" style="gap:6px">
+            <a class="filter-chip" href="/membre/emprunts">En cours</a>
+            <button class="filter-chip active" type="button">Historique</button>
+        </div>
+    </div>
+
+    <div class="panel">
+        @if (historique.Count == 0)
+        {
+            <EmptyState Titre="Historique vide"
+                        Message="Vos livres rapportés apparaîtront ici avec leur date de retour effective.">
+                <a class="btn btn-outline" href="/catalogue">Explorer le catalogue</a>
+            </EmptyState>
+        }
+        else
+        {
+            <div class="activity-list">
+                @foreach (var emprunt in historique.OrderByDescending(e => e.DateRetourEffective))
+                {
+                    <LoanItem Emprunt="emprunt" />
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private IReadOnlyList<EmpruntDto>? historique;
+    private bool chargement = true;
+    private string? erreur;
+
+    protected override async Task OnInitializedAsync() => await Charger();
+
+    private async Task Charger()
+    {
+        chargement = true;
+        erreur = null;
+        try
+        {
+            var donnees = await Loans.GetMineAsync();
+            historique = donnees.Historique;
+        }
+        catch (ApiRequestException ex)
+        {
+            erreur = ex.Message;
+        }
+        catch (HttpRequestException)
+        {
+            erreur = "Le service des emprunts est momentanément indisponible.";
+        }
+        finally
+        {
+            chargement = false;
+        }
+    }
+}

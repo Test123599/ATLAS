@@ -1,0 +1,156 @@
+@page "/livres/{Id:int}"
+@inject IBooksApi Books
+@inject ILoansApi Loans
+@inject ToastService Toasts
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthState
+
+@if (chargement)
+{
+    <LoadingState Message="Chargement de l'ouvrage…" />
+}
+else if (introuvable)
+{
+    <EmptyState Titre="Ouvrage introuvable" Message="Ce livre n'est pas présent dans le catalogue.">
+        <a class="btn btn-outline" href="/catalogue">Retour au catalogue</a>
+    </EmptyState>
+}
+else if (erreur is not null)
+{
+    <ErrorState Message="@erreur" OnRetry="Charger" />
+}
+else if (livre is not null)
+{
+    <p style="margin-bottom:24px"><a class="small" href="/catalogue">← Catalogue</a> <span class="muted small">/ @livre.CategorieLibelle</span></p>
+
+    <div class="detail-layout">
+        <div class="detail-cover">
+            <CoverArt Titre="@livre.Titre" Auteur="@livre.AuteurNom" Isbn="@livre.Isbn" Url="@livre.CouvertureUrl" />
+            @if (estAuthentifie)
+            {
+                <div style="margin-top:18px">
+                    <button class="btn btn-solid btn-block" type="button"
+                            disabled="@(!livre.EstDisponible || livre.EmprunteParUtilisateurCourant || occupation)"
+                            @onclick="Emprunter">
+                        @if (occupation)
+                        {
+                            <span>Traitement…</span>
+                        }
+                        else if (livre.EmprunteParUtilisateurCourant)
+                        {
+                            <span>Déjà emprunté</span>
+                        }
+                        else if (livre.EstDisponible)
+                        {
+                            <span>Emprunter cet ouvrage</span>
+                        }
+                        else
+                        {
+                            <span>Aucun exemplaire disponible</span>
+                        }
+                    </button>
+                    <p class="small muted" style="margin-top:10px">Durée du prêt : 21 jours · 5 emprunts actifs maximum</p>
+                </div>
+            }
+            else
+            {
+                <div style="margin-top:18px">
+                    <a class="btn btn-outline btn-block" href="/connexion?retour=/livres/@livre.Id">Se connecter pour emprunter</a>
+                </div>
+            }
+        </div>
+
+        <div class="detail-head">
+            <p class="eyebrow">@livre.CategorieLibelle · @livre.AnneePublication</p>
+            <h1>@livre.Titre</h1>
+            <p class="lead" style="font-family:var(--serif); font-size:1.2rem">@livre.AuteurNom</p>
+
+            <div class="detail-facts">
+                <div class="detail-fact"><span>Disponibilité</span><strong>@livre.NombreDisponibles / @livre.NombreExemplaires exemplaire(s)</strong></div>
+                <div class="detail-fact"><span>ISBN</span><strong>@livre.Isbn</strong></div>
+                <div class="detail-fact"><span>Année de publication</span><strong>@livre.AnneePublication</strong></div>
+                <div class="detail-fact"><span>Prêts en cours</span><strong>@livre.NombreEmpruntsActifs</strong></div>
+            </div>
+
+            <div class="prose">
+                <h2 style="font-size:1.5rem;margin-bottom:12px">À propos de cet ouvrage</h2>
+                <p>@livre.Resume</p>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(livre.AuteurBiographie))
+            {
+                <div class="panel-flat" style="margin-top:32px">
+                    <p class="eyebrow">L'auteur</p>
+                    <h3>@livre.AuteurNom</h3>
+                    <p class="small" style="margin-top:10px;color:#4b504b">@livre.AuteurBiographie</p>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private LivreDetailDto? livre;
+    private bool chargement = true;
+    private bool estAuthentifie;
+    private bool occupation;
+    private bool introuvable;
+    private string? erreur;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthState.GetAuthenticationStateAsync();
+        estAuthentifie = state.User.Identity?.IsAuthenticated == true;
+        await Charger();
+    }
+
+    private async Task Charger()
+    {
+        chargement = true;
+        erreur = null;
+        introuvable = false;
+        try
+        {
+            livre = await Books.GetByIdAsync(Id);
+        }
+        catch (ApiRequestException ex) when (ex.EstNotFound)
+        {
+            introuvable = true;
+        }
+        catch (ApiRequestException ex)
+        {
+            erreur = ex.Message;
+        }
+        catch (HttpRequestException)
+        {
+            erreur = "Le catalogue est momentanément indisponible.";
+        }
+        finally
+        {
+            chargement = false;
+        }
+    }
+
+    private async Task Emprunter()
+    {
+        if (livre is null) return;
+        occupation = true;
+        try
+        {
+            await Loans.BorrowAsync(livre.Id);
+            Toasts.Success($"« {livre.Titre} » a été emprunté. Retour prévu dans 21 jours.");
+            Navigation.NavigateTo("/membre/emprunts");
+        }
+        catch (ApiRequestException ex)
+        {
+            Toasts.Error(ex.Message);
+            await Charger();
+        }
+        finally
+        {
+            occupation = false;
+        }
+    }
+}

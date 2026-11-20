@@ -1,0 +1,198 @@
+@page "/bibliothecaire/livres"
+@attribute [Authorize(Policy = Policies.PeutGererCatalogue)]
+@inject IBooksApi Books
+@inject ICategoriesApi Categories
+@inject ToastService Toasts
+
+<PageTitle>Gestion des livres · ATLAS</PageTitle>
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Espace bibliothèque</p>
+        <h1>Gestion des livres</h1>
+        <p>Administrez le catalogue, les stocks et la disponibilité des ouvrages.</p>
+    </div>
+    <a class="btn btn-solid" href="/bibliothecaire/livres/creer">+ Nouveau livre</a>
+</div>
+
+<div class="toolbar">
+    <div class="field">
+        <label for="admin-book-search">Recherche</label>
+        <input id="admin-book-search" type="search" value="@query.Recherche" @oninput="OnSearchChanged" placeholder="Titre, auteur ou ISBN" />
+    </div>
+    <div class="field field-small">
+        <label for="admin-book-category">Collection</label>
+        <select id="admin-book-category" value="@categoryValue" @onchange="OnCategoryChanged">
+            <option value="">Toutes</option>
+            @foreach (var categorie in categories)
+            {
+                <option value="@categorie.Id">@categorie.Libelle</option>
+            }
+        </select>
+    </div>
+    <label class="checkbox-line" style="padding-bottom:10px">
+        <input type="checkbox" @bind="query.DisponibleUniquement" @bind:after="ChangerFiltre" />
+        Disponibles uniquement
+    </label>
+</div>
+
+@if (chargement)
+{
+    <LoadingState Message="Chargement du catalogue…" />
+}
+else if (erreur is not null)
+{
+    <ErrorState Message="@erreur" OnRetry="Charger" />
+}
+else if (resultat is null || resultat.Items.Count == 0)
+{
+    <EmptyState Titre="Aucun livre trouvé" Message="Ajustez les filtres ou ajoutez un nouvel ouvrage au catalogue.">
+        <a class="btn btn-outline" href="/bibliothecaire/livres/creer">Ajouter un livre</a>
+    </EmptyState>
+}
+else
+{
+    <p class="small muted">@resultat.TotalCount ouvrage(s) · page @resultat.Page sur @resultat.TotalPages</p>
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Ouvrage</th>
+                    <th>Auteur</th>
+                    <th>Collection</th>
+                    <th>Année</th>
+                    <th>Stock</th>
+                    <th>Statut</th>
+                    <th style="text-align:right">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var livre in resultat.Items)
+                {
+                    <tr>
+                        <td>
+                            <div class="row" style="flex-wrap:nowrap">
+                                <span style="width:34px;flex:none"><CoverArt Titre="@livre.Titre" Auteur="@livre.AuteurNom" Isbn="@livre.Isbn" Url="@livre.CouvertureUrl" /></span>
+                                <span>
+                                    <a href="/livres/@livre.Id"><strong>@livre.Titre</strong></a><br />
+                                    <small class="muted">@livre.Isbn</small>
+                                </span>
+                            </div>
+                        </td>
+                        <td>@livre.AuteurNom</td>
+                        <td>@livre.CategorieLibelle</td>
+                        <td>@livre.AnneePublication</td>
+                        <td>@livre.NombreDisponibles / @livre.NombreExemplaires</td>
+                        <td><StatusBadge Text="@(livre.EstDisponible ? "Disponible" : "Épuisé")" Tone="@(livre.EstDisponible ? "sage" : "muted")" /></td>
+                        <td>
+                            <div class="cell-actions">
+                                <a class="btn btn-small btn-outline" href="/bibliothecaire/livres/@livre.Id/modifier">Modifier</a>
+                                <button class="btn btn-small btn-quiet" type="button" @onclick="() => DemanderSuppression(livre)">Supprimer</button>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <Pagination Page="resultat.Page" TotalPages="resultat.TotalPages" OnPageChanged="ChangerPage" />
+}
+
+@if (livreASupprimer is not null)
+{
+    <ConfirmDialog Titre="Supprimer cet ouvrage ?"
+                   Message="@($"« {livreASupprimer.Titre} » sera retiré définitivement du catalogue. Cette action est irréversible.")"
+                   ConfirmLabel="Supprimer" Danger="true"
+                   OnConfirm="Supprimer" OnCancel="() => livreASupprimer = null" />
+}
+
+@code {
+    private readonly LivreQueryDto query = new() { Page = 1, TaillePage = 15, Tri = "titre" };
+    private IReadOnlyList<CategorieDto> categories = [];
+    private PagedResult<LivreDto>? resultat;
+    private LivreDto? livreASupprimer;
+    private string categoryValue = string.Empty;
+    private bool chargement = true;
+    private string? erreur;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            categories = await Categories.GetAllAsync();
+        }
+        catch (ApiRequestException ex)
+        {
+            Toasts.Error(ex.Message);
+        }
+        await Charger();
+    }
+
+    private async Task Charger()
+    {
+        chargement = true;
+        erreur = null;
+        try
+        {
+            resultat = await Books.GetAsync(query);
+        }
+        catch (ApiRequestException ex)
+        {
+            erreur = ex.Message;
+        }
+        catch (HttpRequestException)
+        {
+            erreur = "Le catalogue est momentanément indisponible.";
+        }
+        finally
+        {
+            chargement = false;
+        }
+    }
+
+    private async Task OnSearchChanged(ChangeEventArgs args)
+    {
+        query.Recherche = args.Value?.ToString() ?? string.Empty;
+        query.Page = 1;
+        await Charger();
+    }
+
+    private async Task OnCategoryChanged(ChangeEventArgs args)
+    {
+        categoryValue = args.Value?.ToString() ?? string.Empty;
+        query.CategorieId = int.TryParse(categoryValue, out var id) ? id : null;
+        query.Page = 1;
+        await Charger();
+    }
+
+    private async Task ChangerFiltre()
+    {
+        query.Page = 1;
+        await Charger();
+    }
+
+    private async Task ChangerPage(int page)
+    {
+        query.Page = page;
+        await Charger();
+    }
+
+    private void DemanderSuppression(LivreDto livre) => livreASupprimer = livre;
+
+    private async Task Supprimer()
+    {
+        if (livreASupprimer is null) return;
+        try
+        {
+            await Books.DeleteAsync(livreASupprimer.Id);
+            Toasts.Success($"« {livreASupprimer.Titre} » a été supprimé.");
+            livreASupprimer = null;
+            await Charger();
+        }
+        catch (ApiRequestException ex)
+        {
+            Toasts.Error(ex.Message);
+            livreASupprimer = null;
+        }
+    }
+}

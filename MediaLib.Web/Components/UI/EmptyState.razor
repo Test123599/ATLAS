@@ -1,0 +1,12 @@
+<div class="state-panel">
+    <span class="state-glyph">◌</span>
+    <h3>@Titre</h3>
+    <p>@Message</p>
+    @ChildContent
+</div>
+
+@code {
+    [Parameter] public string Titre { get; set; } = "Aucun résultat";
+    [Parameter] public string Message { get; set; } = "Essayez d'ajuster vos critères de recherche.";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

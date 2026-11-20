@@ -1,0 +1,149 @@
+﻿@inherits LayoutComponentBase
+@inject NavigationManager Navigation
+@inject AtlasAuthenticationStateProvider AuthProvider
+@inject ToastService Toasts
+@inject IConfiguration Configuration
+
+<div class="atlas-shell">
+    <aside class="sidebar @(menuOuvert ? "sidebar-open" : "")">
+        <div class="sidebar-head">
+            <a class="brand" href="/" @onclick="FermerMenu">
+                <span class="brand-mark">A</span>
+                <span class="brand-text"><strong>ATLAS</strong><small>MediaLib · 1926</small></span>
+            </a>
+            <button class="sidebar-close" type="button" aria-label="Fermer le menu" @onclick="() => menuOuvert = false">×</button>
+        </div>
+
+        <nav class="side-nav" aria-label="Navigation principale">
+            <p class="nav-label">Découvrir</p>
+            <NavLink class="nav-link" href="/" Match="NavLinkMatch.All" @onclick="FermerMenu"><span class="nav-index">01</span>Accueil</NavLink>
+            <NavLink class="nav-link" href="/catalogue" @onclick="FermerMenu"><span class="nav-index">02</span>Catalogue</NavLink>
+
+            <AuthorizeView Policy="PeutEmprunter">
+                <p class="nav-label">Espace membre</p>
+                <NavLink class="nav-link" href="/membre" Match="NavLinkMatch.All" @onclick="FermerMenu"><span class="nav-index">03</span>Tableau de bord</NavLink>
+                <NavLink class="nav-link" href="/membre/emprunts" @onclick="FermerMenu"><span class="nav-index">04</span>Mes emprunts</NavLink>
+                <NavLink class="nav-link" href="/membre/historique" @onclick="FermerMenu"><span class="nav-index">05</span>Historique</NavLink>
+                <NavLink class="nav-link" href="/membre/profil" @onclick="FermerMenu"><span class="nav-index">06</span>Profil</NavLink>
+            </AuthorizeView>
+
+            <AuthorizeView Policy="PeutGererCatalogue">
+                <p class="nav-label">Bibliothèque</p>
+                <NavLink class="nav-link" href="/bibliothecaire" Match="NavLinkMatch.All" @onclick="FermerMenu"><span class="nav-index">07</span>Activité</NavLink>
+                <NavLink class="nav-link" href="/bibliothecaire/livres" @onclick="FermerMenu"><span class="nav-index">08</span>Livres</NavLink>
+                <NavLink class="nav-link" href="/bibliothecaire/auteurs" @onclick="FermerMenu"><span class="nav-index">09</span>Auteurs</NavLink>
+                <NavLink class="nav-link" href="/bibliothecaire/categories" @onclick="FermerMenu"><span class="nav-index">10</span>Catégories</NavLink>
+                <NavLink class="nav-link" href="/bibliothecaire/emprunts" @onclick="FermerMenu"><span class="nav-index">11</span>Tous les prêts</NavLink>
+                <NavLink class="nav-link" href="/bibliothecaire/emprunts/en-retard" @onclick="FermerMenu"><span class="nav-index">12</span>Retards</NavLink>
+                <NavLink class="nav-link" href="/bibliothecaire/retours" @onclick="FermerMenu"><span class="nav-index">13</span>Retours</NavLink>
+            </AuthorizeView>
+
+            <AuthorizeView Policy="EstAdmin">
+                <p class="nav-label">Administration</p>
+                <NavLink class="nav-link" href="/admin/utilisateurs" @onclick="FermerMenu"><span class="nav-index">14</span>Utilisateurs</NavLink>
+                <NavLink class="nav-link" href="/admin/roles" @onclick="FermerMenu"><span class="nav-index">15</span>Rôles & accès</NavLink>
+                <NavLink class="nav-link" href="/admin/activation" @onclick="FermerMenu"><span class="nav-index">16</span>Activation</NavLink>
+            </AuthorizeView>
+        </nav>
+
+        <div class="sidebar-foot">
+            <AuthorizeView>
+                <Authorized Context="auth">
+                    <div class="user-block">
+                        <div class="avatar">@Initiales(auth.User)</div>
+                        <div class="user-meta">
+                            <strong>@Prenom(auth.User) @Nom(auth.User)</strong>
+                            <small>@RolePrincipal(auth.User)</small>
+                        </div>
+                    </div>
+                    <button class="text-button" type="button" @onclick="Deconnexion">Se déconnecter</button>
+                </Authorized>
+                <NotAuthorized>
+                    <a class="btn btn-outline btn-block" href="/connexion" @onclick="FermerMenu">Se connecter</a>
+                    <a class="text-button" href="/inscription" @onclick="FermerMenu">Créer un compte</a>
+                </NotAuthorized>
+            </AuthorizeView>
+            <p class="sidebar-legal">ATLAS · Bibliothèque numérique<br />Collection de démonstration</p>
+        </div>
+    </aside>
+
+    @if (menuOuvert)
+    {
+        <button class="sidebar-backdrop" type="button" aria-label="Fermer le menu" @onclick="() => menuOuvert = false"></button>
+    }
+
+    <div class="main-column">
+        <header class="topbar">
+            <button class="menu-button" type="button" aria-label="Ouvrir le menu" @onclick="() => menuOuvert = true">
+                <span></span><span></span><span></span>
+            </button>
+            <form class="top-search" @onsubmit="Rechercher" @onsubmit:preventDefault="true">
+                <span class="search-icon" aria-hidden="true">⌕</span>
+                <input type="search" placeholder="Rechercher un titre, un auteur, un ISBN…" aria-label="Rechercher" @bind="recherche" />
+                <button type="submit" class="search-submit">Rechercher</button>
+            </form>
+            <div class="topbar-right">
+                <span class="topbar-date">@DateTime.Now.ToString("dd MMMM yyyy")</span>
+                <a class="topbar-catalog" href="/catalogue">Parcourir</a>
+            </div>
+        </header>
+
+        <main class="page-content">@Body</main>
+
+        <footer class="site-footer">
+            <div><strong>ATLAS</strong> — Digital Library &amp; Lending Platform</div>
+            <div class="footer-links">
+                <a href="/catalogue">Catalogue</a>
+                <a href="/">À propos</a>
+                <a href="@ApiDocsUrl" target="_blank" rel="noopener">Documentation API</a>
+            </div>
+        </footer>
+    </div>
+</div>
+
+<ToastHost />
+
+@code {
+    private bool menuOuvert;
+    private string recherche = string.Empty;
+
+    private string ApiDocsUrl => (Configuration["ApiBaseUrl"] ?? "http://localhost:5196").TrimEnd('/') + "/scalar/v1";
+
+    private void FermerMenu() => menuOuvert = false;
+
+    private void Rechercher()
+    {
+        var terme = recherche.Trim();
+        Navigation.NavigateTo(string.IsNullOrEmpty(terme)
+            ? "/catalogue"
+            : "/catalogue?recherche=" + Uri.EscapeDataString(terme));
+        FermerMenu();
+    }
+
+    private async Task Deconnexion()
+    {
+        await AuthProvider.SignOutAsync();
+        Toasts.Info("Vous êtes déconnecté.");
+        FermerMenu();
+        Navigation.NavigateTo("/");
+    }
+
+    private static string Initiales(ClaimsPrincipal user)
+    {
+        var p = user.FindFirstValue(ClaimTypes.GivenName) ?? string.Empty;
+        var n = user.FindFirstValue(ClaimTypes.Surname) ?? string.Empty;
+        var text = $"{p} {n}".Trim();
+        return text.Length == 0 ? "A" : string.Concat(text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(s => char.ToUpperInvariant(s[0])));
+    }
+
+    private static string Prenom(ClaimsPrincipal user) => user.FindFirstValue(ClaimTypes.GivenName) ?? "Membre";
+    private static string Nom(ClaimsPrincipal user) => user.FindFirstValue(ClaimTypes.Surname) ?? string.Empty;
+
+    private static string RolePrincipal(ClaimsPrincipal user)
+    {
+        var roles = user.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
+        return roles.Contains("Admin") ? "Administrateur"
+            : roles.Contains("Bibliothecaire") ? "Bibliothécaire"
+            : "Membre";
+    }
+}

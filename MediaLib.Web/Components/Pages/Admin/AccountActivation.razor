@@ -1,0 +1,209 @@
+@page "/admin/activation"
+@attribute [Authorize(Policy = Policies.EstAdmin)]
+@inject IAdminApi Admin
+@inject ToastService Toasts
+@inject AuthenticationStateProvider AuthState
+
+<PageTitle>Activation des comptes · ATLAS</PageTitle>
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Administration</p>
+        <h1>Activation des comptes</h1>
+        <p>Désactiver un compte révoque immédiatement toutes ses sessions actives. Votre propre compte ne peut pas être désactivé.</p>
+    </div>
+    <a class="btn btn-outline" href="/admin/utilisateurs">Gestion des utilisateurs</a>
+</div>
+
+@if (chargement)
+{
+    <LoadingState Message="Chargement des comptes…" />
+}
+else if (erreur is not null)
+{
+    <ErrorState Message="@erreur" OnRetry="Charger" />
+}
+else if (utilisateurs.Count == 0)
+{
+    <EmptyState Titre="Aucun compte" Message="Aucun utilisateur n'est enregistré." />
+}
+else
+{
+    <div class="toolbar">
+        <div class="field">
+            <label for="activation-search">Rechercher un compte</label>
+            <input id="activation-search" type="search" value="@query.Recherche" @oninput="OnSearchChanged" placeholder="Nom ou e-mail" />
+        </div>
+        <div class="field field-small">
+            <label for="activation-role">Rôle</label>
+            <select id="activation-role" value="@roleValue" @onchange="OnRoleChanged">
+                <option value="">Tous les rôles</option>
+                @foreach (var role in Roles.All)
+                {
+                    <option value="@role">@role</option>
+                }
+            </select>
+        </div>
+    </div>
+
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr><th>Utilisateur</th><th>Rôles</th><th>État</th><th style="text-align:right">Action</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var utilisateur in utilisateurs)
+                {
+                    <tr>
+                        <td>
+                            <a href="/admin/utilisateurs/@Uri.EscapeDataString(utilisateur.Id)"><strong>@utilisateur.Prenom @utilisateur.Nom</strong></a><br />
+                            <small class="muted">@utilisateur.Email</small>
+                        </td>
+                        <td>@string.Join(", ", utilisateur.Roles)</td>
+                        <td>
+                            @if (utilisateur.EstVerrouille)
+                            {
+                                <StatusBadge Text="Verrouillé" Tone="danger" />
+                            }
+                            else if (utilisateur.EstActif)
+                            {
+                                <StatusBadge Text="Actif" Tone="sage" />
+                            }
+                            else
+                            {
+                                <StatusBadge Text="Inactif" Tone="muted" />
+                            }
+                        </td>
+                        <td>
+                            <div class="cell-actions">
+                                @if (utilisateur.Id == currentUserId)
+                                {
+                                    <span class="small muted">Votre compte</span>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-small @(utilisateur.EstActif ? "btn-quiet" : "btn-outline")" type="button"
+                                            disabled="@(utilisateur.Id == utilisateurEnCours)"
+                                            @onclick="() => DemanderChangement(utilisateur)">
+                                        @(utilisateur.EstActif ? "Désactiver" : "Activer")
+                                    </button>
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <Pagination Page="page" TotalPages="totalPages" OnPageChanged="ChangerPage" />
+}
+
+@if (utilisateurCible is not null)
+{
+    <ConfirmDialog Titre="@TitreConfirmation"
+                   Message="@MessageConfirmation"
+                   ConfirmLabel="@LabelConfirmation"
+                   Danger="@utilisateurCible.EstActif"
+                   OnConfirm="Appliquer" OnCancel="() => utilisateurCible = null" />
+}
+
+@code {
+    private readonly UtilisateurQueryDto query = new() { Page = 1, TaillePage = 15 };
+    private IReadOnlyList<UtilisateurDto> utilisateurs = [];
+    private UtilisateurDto? utilisateurCible;
+    private string? utilisateurEnCours;
+    private string? currentUserId;
+    private string roleValue = string.Empty;
+    private int page = 1;
+    private int totalPages;
+    private bool chargement = true;
+    private string? erreur;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthState.GetAuthenticationStateAsync();
+        currentUserId = state.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        await Charger();
+    }
+
+    private async Task Charger()
+    {
+        chargement = true;
+        erreur = null;
+        try
+        {
+            var resultat = await Admin.GetUsersAsync(query);
+            utilisateurs = resultat.Items;
+            page = resultat.Page;
+            totalPages = resultat.TotalPages;
+        }
+        catch (ApiRequestException ex)
+        {
+            erreur = ex.Message;
+        }
+        catch (HttpRequestException)
+        {
+            erreur = "Le service d'administration est momentanément indisponible.";
+        }
+        finally
+        {
+            chargement = false;
+        }
+    }
+
+    private async Task OnSearchChanged(ChangeEventArgs args)
+    {
+        query.Recherche = args.Value?.ToString() ?? string.Empty;
+        query.Page = 1;
+        await Charger();
+    }
+
+    private async Task OnRoleChanged(ChangeEventArgs args)
+    {
+        roleValue = args.Value?.ToString() ?? string.Empty;
+        query.Role = string.IsNullOrWhiteSpace(roleValue) ? null : roleValue;
+        query.Page = 1;
+        await Charger();
+    }
+
+    private async Task ChangerPage(int nouvellePage)
+    {
+        query.Page = nouvellePage;
+        await Charger();
+    }
+
+    private string TitreConfirmation => utilisateurCible?.EstActif == true ? "Désactiver ce compte ?" : "Activer ce compte ?";
+
+    private string LabelConfirmation => utilisateurCible?.EstActif == true ? "Désactiver" : "Activer";
+
+    private string MessageConfirmation => utilisateurCible is null
+        ? string.Empty
+        : $"Le compte de {utilisateurCible.Prenom} {utilisateurCible.Nom} sera " +
+          (utilisateurCible.EstActif ? "désactivé et ses sessions révoquées." : "réactivé.");
+
+    private void DemanderChangement(UtilisateurDto utilisateur) => utilisateurCible = utilisateur;
+
+    private async Task Appliquer()
+    {
+        if (utilisateurCible is null) return;
+        var cible = utilisateurCible;
+        utilisateurCible = null;
+        utilisateurEnCours = cible.Id;
+        try
+        {
+            await Admin.SetActiveAsync(cible.Id, !cible.EstActif);
+            Toasts.Success(cible.EstActif
+                ? $"Le compte de {cible.Prenom} a été désactivé."
+                : $"Le compte de {cible.Prenom} a été activé.");
+            await Charger();
+        }
+        catch (ApiRequestException ex)
+        {
+            Toasts.Error(ex.Message);
+        }
+        finally
+        {
+            utilisateurEnCours = null;
+        }
+    }
+}

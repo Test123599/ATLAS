@@ -1,0 +1,253 @@
+@page "/admin/roles"
+@attribute [Authorize(Policy = Policies.EstAdmin)]
+@inject IAdminApi Admin
+@inject ToastService Toasts
+@inject AuthenticationStateProvider AuthState
+
+<PageTitle>Rôles et accès · ATLAS</PageTitle>
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Administration</p>
+        <h1>Rôles et accès</h1>
+        <p>Attribuez les rôles Membre, Bibliothécaire ou Admin. Le dernier administrateur et votre propre compte sont protégés.</p>
+    </div>
+    <a class="btn btn-outline" href="/admin/utilisateurs">Gestion des utilisateurs</a>
+</div>
+
+<div class="grid grid-2">
+    <section>
+        <div class="toolbar">
+            <div class="field">
+                <label for="role-user-search">Rechercher un compte</label>
+                <input id="role-user-search" type="search" value="@query.Recherche" @oninput="OnSearchChanged" placeholder="Nom ou e-mail" />
+            </div>
+        </div>
+
+        @if (chargementListe)
+        {
+            <LoadingState Message="Chargement des comptes…" />
+        }
+        else if (erreurListe is not null)
+        {
+            <ErrorState Message="@erreurListe" OnRetry="ChargerListe" />
+        }
+        else if (utilisateurs.Count == 0)
+        {
+            <EmptyState Titre="Aucun compte" Message="Ajustez votre recherche." />
+        }
+        else
+        {
+            <div class="panel" style="padding:6px 0">
+                <div class="activity-list">
+                    @foreach (var utilisateur in utilisateurs)
+                    {
+                        <button type="button" class="role-user-row @(utilisateur.Id == selectedId ? "selected" : "")"
+                                @onclick="() => Selectionner(utilisateur)">
+                            <span class="avatar" style="flex:none">@Initiales(utilisateur)</span>
+                            <span>
+                                <strong>@utilisateur.Prenom @utilisateur.Nom</strong><br />
+                                <small class="muted">@utilisateur.Email</small>
+                            </span>
+                            <span class="row" style="gap:4px;margin-left:auto;justify-content:flex-end">
+                                @foreach (var role in utilisateur.Roles)
+                                {
+                                    <StatusBadge Text="@role" Tone="@(role == Roles.Admin ? "terracotta" : "muted")" />
+                                }
+                            </span>
+                        </button>
+                    }
+                </div>
+            </div>
+        }
+    </section>
+
+    <section>
+        <div class="panel">
+            <p class="eyebrow">Attribution</p>
+            <h2 style="font-size:1.7rem;margin-bottom:8px">@(selected is null ? "Sélectionnez un compte" : $"Rôles de {selected.Prenom} {selected.Nom}")</h2>
+
+            @if (selected is null)
+            {
+                <p class="muted small">Choisissez un utilisateur dans la liste pour modifier ses rôles.</p>
+            }
+            else
+            {
+                <p class="small muted">@selected.Email</p>
+                @if (selected.Id == currentUserId)
+                {
+                    <div class="validation-summary" style="margin-top:14px">
+                        Il s'agit de votre propre compte : la modification de vos rôles sera refusée par le serveur.
+                    </div>
+                }
+
+                <div class="stack" style="margin-top:22px">
+                    @foreach (var role in Roles.All)
+                    {
+                        <label class="checkbox-line role-option">
+                            <input type="checkbox" checked="@rolesSelectionnes.Contains(role)"
+                                   @onchange="args => BasculerRole(role, args.Value is true)" />
+                            <span><strong>@role</strong> — @DescriptionRole(role)</span>
+                        </label>
+                    }
+                </div>
+
+                @if (!string.IsNullOrEmpty(erreurSauvegarde))
+                {
+                    <div class="validation-summary" style="margin-top:16px" role="alert">@erreurSauvegarde</div>
+                }
+
+                <div class="form-actions" style="margin-top:24px">
+                    <button class="btn btn-solid" type="button" disabled="@(occupation || rolesSelectionnes.Count == 0)" @onclick="DemanderSauvegarde">
+                        @(occupation ? "Enregistrement…" : "Enregistrer les rôles")
+                    </button>
+                    <button class="btn btn-quiet" type="button" @onclick="AnnulerSelection">Annuler</button>
+                </div>
+            }
+        </div>
+    </section>
+</div>
+
+@if (confirmation)
+{
+    <ConfirmDialog Titre="Modifier les rôles ?"
+                   Message="@($"Les rôles de {selected?.Prenom} {selected?.Nom} seront remplacés par : {string.Join(", ", rolesSelectionnes)}.")"
+                   ConfirmLabel="Confirmer"
+                   OnConfirm="Sauvegarder" OnCancel="() => confirmation = false" />
+}
+
+@code {
+    [Parameter, SupplyParameterFromQuery(Name = "utilisateur")] public string? UtilisateurInitial { get; set; }
+
+    private readonly UtilisateurQueryDto query = new() { Page = 1, TaillePage = 40 };
+    private IReadOnlyList<UtilisateurDto> utilisateurs = [];
+    private UtilisateurDto? selected;
+    private readonly HashSet<string> rolesSelectionnes = new(StringComparer.Ordinal);
+    private string? selectedId;
+    private string? currentUserId;
+    private bool chargementListe = true;
+    private bool occupation;
+    private bool confirmation;
+    private string? erreurListe;
+    private string? erreurSauvegarde;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthState.GetAuthenticationStateAsync();
+        currentUserId = state.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        await ChargerListe();
+
+        if (!string.IsNullOrWhiteSpace(UtilisateurInitial))
+        {
+            var cible = utilisateurs.FirstOrDefault(u => u.Id == UtilisateurInitial);
+            if (cible is not null) Selectionner(cible);
+        }
+    }
+
+    private async Task ChargerListe()
+    {
+        chargementListe = true;
+        erreurListe = null;
+        try
+        {
+            var resultat = await Admin.GetUsersAsync(query);
+            utilisateurs = resultat.Items;
+        }
+        catch (ApiRequestException ex)
+        {
+            erreurListe = ex.Message;
+        }
+        catch (HttpRequestException)
+        {
+            erreurListe = "Le service d'administration est momentanément indisponible.";
+        }
+        finally
+        {
+            chargementListe = false;
+        }
+    }
+
+    private async Task OnSearchChanged(ChangeEventArgs args)
+    {
+        query.Recherche = args.Value?.ToString() ?? string.Empty;
+        query.Page = 1;
+        AnnulerSelection();
+        await ChargerListe();
+    }
+
+    private void AnnulerSelection()
+    {
+        selected = null;
+        selectedId = null;
+        rolesSelectionnes.Clear();
+        erreurSauvegarde = null;
+        confirmation = false;
+    }
+
+    private void Selectionner(UtilisateurDto utilisateur)
+    {
+        selected = utilisateur;
+        selectedId = utilisateur.Id;
+        rolesSelectionnes.Clear();
+        foreach (var role in utilisateur.Roles) rolesSelectionnes.Add(role);
+        erreurSauvegarde = null;
+    }
+
+    private void BasculerRole(string role, bool actif)
+    {
+        if (actif) rolesSelectionnes.Add(role);
+        else rolesSelectionnes.Remove(role);
+    }
+
+    private void DemanderSauvegarde()
+    {
+        erreurSauvegarde = null;
+        confirmation = true;
+    }
+
+    private async Task Sauvegarder()
+    {
+        confirmation = false;
+        if (selected is null) return;
+        occupation = true;
+        try
+        {
+            var misAJour = await Admin.UpdateRolesAsync(selected.Id,
+                new UpdateRolesRequest { Roles = [.. rolesSelectionnes] });
+            Toasts.Success("Les rôles ont été mis à jour.");
+            await ChargerListe();
+            selected = utilisateurs.FirstOrDefault(u => u.Id == misAJour.Id);
+            if (selected is not null)
+            {
+                rolesSelectionnes.Clear();
+                foreach (var role in selected.Roles) rolesSelectionnes.Add(role);
+            }
+        }
+        catch (ApiRequestException ex)
+        {
+            erreurSauvegarde = ex.Message;
+            Toasts.Error(ex.Message);
+        }
+        finally
+        {
+            occupation = false;
+        }
+    }
+
+    private static string Initiales(UtilisateurDto user)
+    {
+        var text = string.Concat($"{user.Prenom} {user.Nom}"
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Take(2)
+            .Select(s => char.ToUpperInvariant(s[0])));
+        return text.Length == 0 ? "U" : text;
+    }
+
+    private static string DescriptionRole(string role) => role switch
+    {
+        Roles.Membre => "Emprunter et consulter ses prêts",
+        Roles.Bibliothecaire => "Gérer le catalogue et les retours",
+        Roles.Admin => "Administrer les comptes et les rôles",
+        _ => role,
+    };
+}

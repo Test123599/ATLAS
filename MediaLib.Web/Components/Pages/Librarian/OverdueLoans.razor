@@ -1,0 +1,15 @@
+@page "/bibliothecaire/emprunts/en-retard"
+@attribute [Authorize(Policy = Policies.PeutGererCatalogue)]
+
+<PageTitle>Prêts en retard · ATLAS</PageTitle>
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Espace bibliothèque</p>
+        <h1>Prêts en retard</h1>
+        <p>Emprunts actifs dont la date de retour prévue est dépassée.</p>
+    </div>
+    <a class="btn btn-outline" href="/bibliothecaire/emprunts">Tous les prêts</a>
+</div>
+
+<LoanDirectory EnRetardUniquement="true" />

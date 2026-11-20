@@ -1,0 +1,122 @@
+@page "/"
+@inject IBooksApi Books
+@inject ICategoriesApi Categories
+@inject IAuthorsApi Authors
+@inject NavigationManager Navigation
+
+@if (chargement)
+{
+    <LoadingState Message="Ouverture des archives…" />
+}
+else if (erreur is not null)
+{
+    <ErrorState Message="@erreur" OnRetry="Charger" />
+}
+else
+{
+    <section class="hero">
+        <div>
+            <p class="eyebrow">Collection ATLAS · Édition 2026</p>
+            <h1>La culture,<br /><em>à portée de main.</em></h1>
+            <p class="lead">Une bibliothèque vivante : littérature, sciences, histoire et idées. Explorez le catalogue, réservez un ouvrage et retrouvez vos emprunts en un seul endroit.</p>
+            <form class="hero-actions" @onsubmit="Rechercher" @onsubmit:preventDefault="true">
+                <input class="hero-search" type="search" placeholder="Un titre, un auteur, unISBN…" aria-label="Rechercher dans le catalogue" @bind="recherche" />
+                <button class="btn btn-solid" type="submit">Explorer la collection</button>
+            </form>
+            <div class="hero-metrics">
+                <div><strong>@totalLivres</strong><span>Ouvrages catalogués</span></div>
+                <div><strong>@categories.Count</strong><span>Collections</span></div>
+                <div><strong>@nombreAuteurs</strong><span>Auteurs</span></div>
+            </div>
+        </div>
+        <div class="hero-art">
+            @if (recents.Count > 0)
+            {
+                <div class="cover-frame"><CoverArt Titre="@recents[0].Titre" Auteur="@recents[0].AuteurNom" Isbn="@recents[0].Isbn" Url="@recents[0].CouvertureUrl" /></div>
+                @if (recents.Count > 1)
+                {
+                    <div class="hero-secondary"><CoverArt Titre="@recents[1].Titre" Auteur="@recents[1].AuteurNom" Isbn="@recents[1].Isbn" Url="@recents[1].CouvertureUrl" /></div>
+                }
+            }
+            <span class="hero-caption">Sélection de la bibliothèque</span>
+        </div>
+    </section>
+
+    <div class="section-head">
+        <div><p class="eyebrow">Nouveaux arrivages</p><h2>Récemment ajoutés</h2></div>
+        <a href="/catalogue?tri=-ajout">Voir tout le catalogue →</a>
+    </div>
+    <div class="grid grid-books">
+        @foreach (var livre in recents.Take(6))
+        {
+            <BookCard Livre="livre" />
+        }
+    </div>
+
+    <div class="section-head">
+        <div><p class="eyebrow">Nos collections</p><h2>Parcourir par thème</h2></div>
+    </div>
+    <div class="grid grid-3">
+        @foreach (var categorie in categories)
+        {
+            <a class="category-tile" href="/catalogue?categorieId=@categorie.Id">
+                <strong>@categorie.Libelle</strong>
+                <span>@categorie.NombreLivres ouvrage(s) dans cette collection</span>
+            </a>
+        }
+    </div>
+
+    <section class="panel-flat" style="margin-top:64px">
+        <p class="eyebrow">Rejoindre ATLAS</p>
+        <h2>Votre prochaine lecture commence ici.</h2>
+        <p class="lead" style="margin-top:14px">Créez un compte membre, empruntez jusqu'à cinq ouvrages et suivez vos échéances depuis votre espace personnel.</p>
+        <div class="hero-actions" style="margin-top:22px">
+            <a class="btn btn-solid" href="/inscription">Créer un compte</a>
+            <a class="btn btn-outline" href="/catalogue">Explorer sans compte</a>
+        </div>
+    </section>
+}
+
+@code {
+    private readonly List<LivreDto> recents = [];
+    private IReadOnlyList<CategorieDto> categories = [];
+    private int totalLivres;
+    private int nombreAuteurs;
+    private string recherche = string.Empty;
+    private bool chargement = true;
+    private string? erreur;
+
+    protected override async Task OnInitializedAsync() => await Charger();
+
+    private async Task Charger()
+    {
+        chargement = true;
+        erreur = null;
+        try
+        {
+            recents.Clear();
+            recents.AddRange(await Books.GetRecentsAsync(6));
+            categories = await Categories.GetAllAsync();
+            var auteurs = await Authors.GetAllAsync();
+            nombreAuteurs = auteurs.Count;
+            totalLivres = categories.Sum(c => c.NombreLivres);
+        }
+        catch (ApiRequestException ex)
+        {
+            erreur = ex.Message;
+        }
+        catch (HttpRequestException)
+        {
+            erreur = "Le catalogue est momentanément indisponible.";
+        }
+        finally
+        {
+            chargement = false;
+        }
+    }
+
+    private void Rechercher()
+        => Navigation.NavigateTo(string.IsNullOrWhiteSpace(recherche)
+            ? "/catalogue"
+            : "/catalogue?recherche=" + Uri.EscapeDataString(recherche.Trim()));
+}

@@ -1,0 +1,23 @@
+<article class="book-card">
+    <a class="book-cover-link" href="/livres/@Livre.Id" aria-label="Voir @Livre.Titre">
+        <CoverArt Titre="@Livre.Titre" Auteur="@Livre.AuteurNom" Isbn="@Livre.Isbn" Url="@Livre.CouvertureUrl" />
+    </a>
+    <div class="book-card-body">
+        <div class="book-card-meta">
+            <span>@Livre.CategorieLibelle</span>
+            <span>@Livre.AnneePublication</span>
+        </div>
+        <h3><a href="/livres/@Livre.Id">@Livre.Titre</a></h3>
+        <p class="book-author">@Livre.AuteurNom</p>
+        <div class="book-card-foot">
+            <StatusBadge Text="@(Livre.EstDisponible ? $"{Livre.NombreDisponibles} disponible(s)" : "En attente")"
+                         Tone="@(Livre.EstDisponible ? "sage" : "muted")" />
+            @ChildContent
+        </div>
+    </div>
+</article>
+
+@code {
+    [Parameter, EditorRequired] public LivreDto Livre { get; set; } = default!;
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

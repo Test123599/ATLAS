@@ -1,0 +1,95 @@
+@page "/connexion"
+@inject AtlasAuthenticationStateProvider AuthProvider
+@inject AuthenticationStateProvider AuthState
+@inject ToastService Toasts
+@inject NavigationManager Navigation
+
+<div class="auth-layout">
+    <aside class="auth-aside">
+        <div>
+            <p class="eyebrow">Espace personnel</p>
+            <h1>Bon retour<br />parmi nous.</h1>
+            <p style="margin-top:20px">Retrouvez vos emprunts, vos échéances et l'ensemble du catalogue ATLAS.</p>
+        </div>
+        <div class="demo-credentials">
+            Comptes de démonstration (développement uniquement)
+            <code>atlas.admin@medialib.local · atlas.librarian@medialib.local · atlas.member@medialib.local</code>
+            <code>Mot de passe : Atlas@2026</code>
+        </div>
+    </aside>
+
+    <div class="auth-form">
+        <p class="eyebrow">Identification</p>
+        <h2>Se connecter</h2>
+        <p>Saisissez vos identifiants pour accéder à votre espace.</p>
+
+        @if (!string.IsNullOrEmpty(erreur))
+        {
+            <div class="validation-summary" role="alert">@erreur</div>
+        }
+
+        <EditForm Model="modele" OnValidSubmit="Connecter" class="form-grid">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <div class="field">
+                <label for="login-email">Adresse e-mail</label>
+                <InputText id="login-email" @bind-Value="modele.Email" type="email" autocomplete="username" />
+                <ValidationMessage For="() => modele.Email" />
+            </div>
+            <div class="field">
+                <label for="login-password">Mot de passe</label>
+                <InputText id="login-password" @bind-Value="modele.Password" type="password" autocomplete="current-password" />
+                <ValidationMessage For="() => modele.Password" />
+            </div>
+            <div class="form-actions">
+                <button class="btn btn-solid" type="submit" disabled="@occupation">@(occupation ? "Connexion…" : "Se connecter")</button>
+                <a class="btn btn-quiet" href="/">Annuler</a>
+            </div>
+        </EditForm>
+
+        <p class="auth-foot">Pas encore de compte ? <a href="/inscription">Créer un compte membre</a></p>
+    </div>
+</div>
+
+@code {
+    [Parameter, SupplyParameterFromQuery(Name = "retour")] public string? Retour { get; set; }
+
+    private readonly LoginRequest modele = new();
+    private bool occupation;
+    private string? erreur;
+
+    private async Task Connecter()
+    {
+        occupation = true;
+        erreur = null;
+        try
+        {
+            await AuthProvider.SignInAsync(modele);
+            Toasts.Success("Bienvenue dans ATLAS.");
+
+            var state = await AuthState.GetAuthenticationStateAsync();
+            var roles = state.User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
+            var destination = !string.IsNullOrWhiteSpace(Retour) && Retour.StartsWith('/') && !Retour.StartsWith("//")
+                ? Retour
+                : roles.Contains("Admin") || roles.Contains("Bibliothecaire")
+                    ? "/bibliothecaire"
+                    : "/membre";
+
+            Navigation.NavigateTo(destination);
+        }
+        catch (ApiRequestException ex)
+        {
+            erreur = ex.Status == 423
+                ? "Compte verrouillé après 5 tentatives échouées. Réessayez dans quelques minutes."
+                : ex.Message;
+        }
+        catch (HttpRequestException)
+        {
+            erreur = "Le service d'authentification est momentanément indisponible.";
+        }
+        finally
+        {
+            occupation = false;
+        }
+    }
+}

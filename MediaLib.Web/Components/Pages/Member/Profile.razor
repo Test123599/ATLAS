@@ -1,0 +1,184 @@
+@page "/membre/profil"
+@attribute [Authorize(Policy = Policies.PeutEmprunter)]
+@inject IAuthApi Auth
+@inject AtlasAuthenticationStateProvider AuthProvider
+@inject NavigationManager Navigation
+@inject ToastService Toasts
+
+<PageTitle>Mon profil · ATLAS</PageTitle>
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Espace membre</p>
+        <h1>Mon profil</h1>
+        <p>Modifiez vos informations personnelles et votre mot de passe.</p>
+    </div>
+</div>
+
+@if (chargement)
+{
+    <LoadingState Message="Chargement du profil…" />
+}
+else if (profil is null)
+{
+    <ErrorState Message="@(erreur ?? "Profil introuvable.")" OnRetry="Charger" />
+}
+else
+{
+    <div class="grid grid-2">
+        <section class="panel">
+            <p class="eyebrow">Identité</p>
+            <h2 style="font-size:1.6rem;margin-bottom:18px">Informations personnelles</h2>
+
+            @if (!string.IsNullOrEmpty(erreurProfil))
+            {
+                <div class="validation-summary" role="alert">@erreurProfil</div>
+            }
+
+            <EditForm Model="identite" OnValidSubmit="EnregistrerProfil" class="form-grid">
+                <DataAnnotationsValidator />
+                <ValidationSummary />
+                <div class="form-row">
+                    <div class="field">
+                        <label for="profile-prenom">Prénom</label>
+                        <InputText id="profile-prenom" @bind-Value="identite.Prenom" />
+                        <ValidationMessage For="() => identite.Prenom" />
+                    </div>
+                    <div class="field">
+                        <label for="profile-nom">Nom</label>
+                        <InputText id="profile-nom" @bind-Value="identite.Nom" />
+                        <ValidationMessage For="() => identite.Nom" />
+                    </div>
+                </div>
+                <div class="field">
+                    <label>Adresse e-mail</label>
+                    <input class="form-control-static" value="@profil.Email" disabled />
+                    <span class="small muted">L'adresse e-mail ne peut pas être modifiée.</span>
+                </div>
+                <div class="form-actions">
+                    <button class="btn btn-solid" type="submit" disabled="@occupationProfil">
+                        @(occupationProfil ? "Enregistrement…" : "Enregistrer les modifications")
+                    </button>
+                </div>
+            </EditForm>
+
+            <hr class="rule" />
+            <p class="small muted" style="margin:0">Membre depuis le @profil.DateInscription.ToString("dd MMMM yyyy") · Rôles : @string.Join(", ", profil.Roles)</p>
+        </section>
+
+        <section class="panel">
+            <p class="eyebrow">Sécurité</p>
+            <h2 style="font-size:1.6rem;margin-bottom:18px">Changer le mot de passe</h2>
+
+            @if (!string.IsNullOrEmpty(erreurMotDePasse))
+            {
+                <div class="validation-summary" role="alert">@erreurMotDePasse</div>
+            }
+
+            <EditForm Model="motDePasse" OnValidSubmit="ChangerMotDePasse" class="form-grid">
+                <DataAnnotationsValidator />
+                <ValidationSummary />
+                <div class="field">
+                    <label for="pwd-actuel">Mot de passe actuel</label>
+                    <InputText id="pwd-actuel" @bind-Value="motDePasse.MotDePasseActuel" type="password" autocomplete="current-password" />
+                    <ValidationMessage For="() => motDePasse.MotDePasseActuel" />
+                </div>
+                <div class="field">
+                    <label for="pwd-nouveau">Nouveau mot de passe</label>
+                    <InputText id="pwd-nouveau" @bind-Value="motDePasse.NouveauMotDePasse" type="password" autocomplete="new-password" />
+                    <ValidationMessage For="() => motDePasse.NouveauMotDePasse" />
+                    <span class="small muted">8 caractères minimum, une majuscule et un chiffre.</span>
+                </div>
+                <div class="form-actions">
+                    <button class="btn btn-outline" type="submit" disabled="@occupationMotDePasse">
+                        @(occupationMotDePasse ? "Mise à jour…" : "Mettre à jour le mot de passe")
+                    </button>
+                </div>
+            </EditForm>
+            <p class="small muted" style="margin-top:16px">Pour votre sécurité, toutes vos sessions sont déconnectées après un changement de mot de passe.</p>
+        </section>
+    </div>
+}
+
+@code {
+    private UserProfileDto? profil;
+    private readonly UpdateProfileRequest identite = new();
+    private readonly ChangePasswordRequest motDePasse = new();
+    private bool chargement = true;
+    private bool occupationProfil;
+    private bool occupationMotDePasse;
+    private string? erreur;
+    private string? erreurProfil;
+    private string? erreurMotDePasse;
+
+    protected override async Task OnInitializedAsync() => await Charger();
+
+    private async Task Charger()
+    {
+        chargement = true;
+        erreur = null;
+        try
+        {
+            profil = await Auth.GetMeAsync();
+            identite.Prenom = profil.Prenom;
+            identite.Nom = profil.Nom;
+        }
+        catch (ApiRequestException ex)
+        {
+            erreur = ex.Message;
+        }
+        catch (HttpRequestException)
+        {
+            erreur = "Le service est momentanément indisponible.";
+        }
+        finally
+        {
+            chargement = false;
+        }
+    }
+
+    private async Task EnregistrerProfil()
+    {
+        occupationProfil = true;
+        erreurProfil = null;
+        try
+        {
+            profil = await Auth.UpdateProfileAsync(identite);
+            AuthProvider.NotifyProfileChanged();
+            Toasts.Success("Vos informations ont été enregistrées.");
+        }
+        catch (ApiRequestException ex)
+        {
+            erreurProfil = ex.Message;
+            Toasts.Error(ex.Message);
+        }
+        finally
+        {
+            occupationProfil = false;
+        }
+    }
+
+    private async Task ChangerMotDePasse()
+    {
+        occupationMotDePasse = true;
+        erreurMotDePasse = null;
+        try
+        {
+            await Auth.ChangePasswordAsync(motDePasse);
+            motDePasse.MotDePasseActuel = string.Empty;
+            motDePasse.NouveauMotDePasse = string.Empty;
+            Toasts.Success("Mot de passe mis à jour. Veuillez vous reconnecter.");
+            await AuthProvider.SignOutAsync();
+            Navigation.NavigateTo("/connexion");
+        }
+        catch (ApiRequestException ex)
+        {
+            erreurMotDePasse = ex.Message;
+            Toasts.Error(ex.Message);
+        }
+        finally
+        {
+            occupationMotDePasse = false;
+        }
+    }
+}

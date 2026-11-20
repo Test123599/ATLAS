@@ -1,0 +1,37 @@
+﻿<CascadingAuthenticationState>
+    <Router AppAssembly="typeof(Program).Assembly">
+        <Found Context="routeData">
+            <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
+                <NotAuthorized>
+                    <LayoutView Layout="typeof(Layout.MainLayout)">
+                        <section class="state-page">
+                            <p class="eyebrow">Accès protégé</p>
+                            <h1>Connectez-vous pour continuer</h1>
+                            <p class="state-copy">Cette page est réservée aux membres de la bibliothèque.</p>
+                            <a class="btn btn-solid" href="/connexion?retour=@RetourVersPage">Se connecter</a>
+                        </section>
+                    </LayoutView>
+                </NotAuthorized>
+            </AuthorizeRouteView>
+            <FocusOnNavigate RouteData="routeData" Selector="h1" />
+        </Found>
+        <NotFound>
+            <LayoutView Layout="typeof(Layout.MainLayout)">
+                <section class="state-page">
+                    <p class="eyebrow">Erreur 404</p>
+                    <h1>Cette page n'existe pas</h1>
+                    <p class="state-copy">Le document recherché n'est pas dans nos archives.</p>
+                    <a class="btn btn-solid" href="/catalogue">Explorer le catalogue</a>
+                </section>
+            </LayoutView>
+        </NotFound>
+    </Router>
+</CascadingAuthenticationState>
+
+@inject NavigationManager Navigation
+
+@code {
+    // Navigation.Uri is absolute; Login.razor only accepts relative return paths.
+    private string RetourVersPage
+        => Uri.EscapeDataString("/" + Navigation.ToBaseRelativePath(Navigation.Uri));
+}

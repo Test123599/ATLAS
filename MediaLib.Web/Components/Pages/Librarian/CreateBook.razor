@@ -1,0 +1,165 @@
+@page "/bibliothecaire/livres/creer"
+@attribute [Authorize(Policy = Policies.PeutGererCatalogue)]
+@inject IBooksApi Books
+@inject IAuthorsApi Authors
+@inject ICategoriesApi Categories
+@inject ToastService Toasts
+@inject NavigationManager Navigation
+
+<PageTitle>Nouveau livre · ATLAS</PageTitle>
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Espace bibliothèque</p>
+        <h1>Ajouter un ouvrage</h1>
+        <p>Un ISBN-10 ou ISBN-13 valide est requis, avec sa clé de contrôle.</p>
+    </div>
+    <a class="btn btn-outline" href="/bibliothecaire/livres">← Retour au catalogue</a>
+</div>
+
+@if (chargement)
+{
+    <LoadingState Message="Préparation du formulaire…" />
+}
+else
+{
+    <div class="panel" style="max-width:860px">
+        @if (!string.IsNullOrEmpty(erreur))
+        {
+            <div class="validation-summary" role="alert">@erreur</div>
+        }
+
+        <EditForm Model="modele" OnValidSubmit="Creer" class="form-grid">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+
+            <div class="form-row">
+                <div class="field">
+                    <label for="book-title">Titre</label>
+                    <InputText id="book-title" @bind-Value="modele.Titre" />
+                    <ValidationMessage For="() => modele.Titre" />
+                </div>
+                <div class="field">
+                    <label for="book-isbn">ISBN</label>
+                    <InputText id="book-isbn" @bind-Value="modele.Isbn" placeholder="9782070455375" />
+                    <ValidationMessage For="() => modele.Isbn" />
+                </div>
+            </div>
+
+            <div class="field">
+                <label for="book-summary">Résumé</label>
+                <InputTextArea id="book-summary" @bind-Value="modele.Resume" />
+                <ValidationMessage For="() => modele.Resume" />
+            </div>
+
+            <div class="form-row">
+                <div class="field">
+                    <label for="book-year">Année de publication</label>
+                    <InputNumber id="book-year" @bind-Value="modele.AnneePublication" />
+                    <ValidationMessage For="() => modele.AnneePublication" />
+                </div>
+                <div class="field">
+                    <label for="book-stock">Nombre d'exemplaires</label>
+                    <InputNumber id="book-stock" @bind-Value="modele.NombreExemplaires" />
+                    <ValidationMessage For="() => modele.NombreExemplaires" />
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="field">
+                    <label for="book-author">Auteur</label>
+                    <InputSelect id="book-author" @bind-Value="modele.AuteurId">
+                        <option value="0">Sélectionner un auteur</option>
+                        @foreach (var auteur in auteurs)
+                        {
+                            <option value="@auteur.Id">@auteur.NomComplet</option>
+                        }
+                    </InputSelect>
+                    <ValidationMessage For="() => modele.AuteurId" />
+                    @if (auteurs.Count == 0)
+                    {
+                        <span class="small muted">Aucun auteur : <a href="/bibliothecaire/auteurs">en créer un</a>.</span>
+                    }
+                </div>
+                <div class="field">
+                    <label for="book-category">Collection</label>
+                    <InputSelect id="book-category" @bind-Value="modele.CategorieId">
+                        <option value="0">Sélectionner une catégorie</option>
+                        @foreach (var categorie in categories)
+                        {
+                            <option value="@categorie.Id">@categorie.Libelle</option>
+                        }
+                    </InputSelect>
+                    <ValidationMessage For="() => modele.CategorieId" />
+                    @if (categories.Count == 0)
+                    {
+                        <span class="small muted">Aucune catégorie : <a href="/bibliothecaire/categories">en créer une</a>.</span>
+                    }
+                </div>
+            </div>
+
+            <div class="field">
+                <label for="book-cover">URL de couverture (facultatif)</label>
+                <InputText id="book-cover" @bind-Value="modele.CouvertureUrl" placeholder="https://…" />
+                <ValidationMessage For="() => modele.CouvertureUrl" />
+                <span class="small muted">Si l'image est indisponible, une couverture ATLAS est générée automatiquement.</span>
+            </div>
+
+            <div class="form-actions">
+                <button class="btn btn-solid" type="submit" disabled="@occupation">@(occupation ? "Création…" : "Créer l'ouvrage")</button>
+                <a class="btn btn-quiet" href="/bibliothecaire/livres">Annuler</a>
+            </div>
+        </EditForm>
+    </div>
+}
+
+@code {
+    private readonly CreateLivreRequest modele = new() { AnneePublication = DateTime.UtcNow.Year, NombreExemplaires = 1 };
+    private IReadOnlyList<AuteurDto> auteurs = [];
+    private IReadOnlyList<CategorieDto> categories = [];
+    private bool chargement = true;
+    private bool occupation;
+    private string? erreur;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            auteurs = await Authors.GetAllAsync();
+            categories = await Categories.GetAllAsync();
+        }
+        catch (ApiRequestException ex)
+        {
+            erreur = ex.Message;
+        }
+        catch (HttpRequestException)
+        {
+            erreur = "Le service est momentanément indisponible.";
+        }
+        finally
+        {
+            chargement = false;
+        }
+    }
+
+    private async Task Creer()
+    {
+        occupation = true;
+        erreur = null;
+        try
+        {
+            var livre = await Books.CreateAsync(modele);
+            Toasts.Success($"« {livre.Titre} » a été ajouté au catalogue.");
+            Navigation.NavigateTo("/bibliothecaire/livres");
+        }
+        catch (ApiRequestException ex)
+        {
+            erreur = ex.Message;
+            Toasts.Error(ex.Message);
+        }
+        finally
+        {
+            occupation = false;
+        }
+    }
+}
